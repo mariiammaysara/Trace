@@ -394,31 +394,35 @@ Output: stable object_id per surviving/updated track this frame
 
 ## 4. Trajectory & Motion Analysis
 
-### Centroids and position
+### Centroids and position `[IMPLEMENTED]`
 
 - A box is reduced to a single representative point — usually the **centroid** `((x_min+x_max)/2, (y_min+y_max)/2)`, sometimes the bottom-center point (better approximates "where the object touches the ground," useful for geometry/speed later).
 - **How TRACE uses it:** every trajectory is a time-ordered list of centroids per `object_id`, stored as `track_points`.
 
-### Displacement, velocity, acceleration
+### Displacement, velocity, acceleration `[IMPLEMENTED — pixel-space only]`
 
 - **Displacement** between two points in time: `Δposition = position(t2) - position(t1)`.
 - **Velocity** (pixels/sec, or real-world units after geometry correction): `displacement / Δt`.
 - **Acceleration**: rate of change of velocity — useful for detecting `SUDDEN_STOP` (large negative acceleration) as an event.
+- Real-world unit correction (homography) is `[PLANNED]` — Phase 5/6. Everything computed in Phase 4 stays in raw pixels/second, deliberately, per this phase's scope.
 
-### Direction
+### Direction `[IMPLEMENTED]`
 
 - Computed from the displacement vector's angle, usually bucketed into compass-style categories (N, NE, E...) or kept as a raw angle for finer analytics.
+- **How TRACE uses it (for now):** raw `atan2(dy, dx)` radians, not yet bucketed into compass categories — bucketing is straightforward to add later against real use cases (e.g. `LINE_CROSSED` direction) once Section 7 needs it; adding it now would be speculative.
 
-### Stationary state and movement state
+### Stationary state and movement state `[IMPLEMENTED — simple per-step threshold, no duration smoothing yet]`
 
 - An object is "stationary" if its velocity stays below a small noise-tolerant threshold for some duration — this threshold must account for natural detection/tracking jitter, or every parked object will falsely flicker between "moving" and "stationary."
+- **How TRACE uses it (for now):** a single configurable speed threshold (px/s) applied per step, no sustained-duration/hysteresis logic yet — that's Section 7's `LOITERING`/`STOPPED` territory (deciding whether a brief tracking loss resets a duration timer, etc.), not this module's job. The threshold has no single correct default — it depends on frame rate and camera distance/resolution, since a few pixels of normal jitter maps to very different px/s depending on fps.
 
-### Dwell time
+### Dwell time `[PLANNED]`
 
 - Total time an object's track has spent inside a defined zone (or simply "present in frame," depending on the metric).
 - Computed as `exit_timestamp - entry_timestamp` per zone-visit, summed if the object enters/exits multiple times.
+- Not implemented in Phase 4 — it's inherently zone-relative, and zones don't exist until the Event Engine (Section 7). What Phase 4 provides (per-object position history with timestamps) is exactly what dwell time will be computed from later.
 
-### The math, at implementation level
+### The math, at implementation level `[IMPLEMENTED — matches the code exactly]`
 
 ```text
 Given track points: (x0,t0), (x1,t1), ..., (xn,tn)
@@ -435,6 +439,14 @@ acceleration_i = (velocity_i - velocity_{i-1}) / (t_i - t_{i-1})
 
 - Every trajectory calculation feeds the **Event Engine** (Section 7): stationary-too-long → `LOITERING`; large deceleration → `SUDDEN_STOP`; zone dwell time crossing a threshold → an alertable condition.
 - Trajectory points, once stored, also power the dashboard's path-overlay visualization and the agent's `get_object_stats()` tool.
+
+### Where this is implemented `[IMPLEMENTED]`
+
+- `src/trajectories/trajectory.py` — `centroid(bbox)` and `magnitude(vector)` helpers; `MotionStep` (dataclass: `object_id`, `frame_id`, `timestamp`, `position`, `displacement`, `velocity`, `speed`, `direction`, `acceleration`, `is_stationary`); `Trajectory` (per-object point history + per-step motion, `update(position, timestamp, frame_id) -> MotionStep | None`); `TrajectoryManager` (per-`object_id` `Trajectory` registry fed directly by `Tracker` output, `update(tracks: list[Track]) -> list[MotionStep]`, `get_path(object_id) -> list[Tuple[float, float]]`).
+- `MotionStep.acceleration` is `None` until a second velocity sample exists (needs 3 positions) — matches the guide's own formula, which needs `velocity_{i-1}` to exist.
+- `TrajectoryManager.update()` returns a step only for tracks that already had at least one prior point — an object's very first-ever appearance produces no `MotionStep` (nothing to diff against yet), consistent with "per-step, not start/end" above.
+- `scripts/trajectory_video.py` — CLI wiring `FrameSource` → `YoloDetector` → `ByteTracker` → `TrajectoryManager` → drawn path (polyline over `get_path()`) + box (red when stationary, green when moving) + `id=<n> <class> <speed>px/s <state>` label, to `--output` and/or `--display`; takes `--stationary-threshold`.
+- `tests/test_trajectory.py` — 6 tests: first-point-produces-no-step, constant velocity (consistent speed/direction, ~zero acceleration), a stop (large deceleration then reads stationary), a direction change (angle actually shifts), jitter around a stationary point (reads stationary despite nonzero per-step speed), and `TrajectoryManager` routing tracks to per-object trajectories via centroid.
 
 ### What I should know
 - [ ] I can compute velocity and direction from two consecutive track points.
@@ -767,6 +779,11 @@ A clean separation: **API layer** (routes, request/response shapes) → **servic
 | Tracking sanity-check CLI (Section 3, Section 8) | `[IMPLEMENTED]` | `scripts/track_video.py` | `main()` — wires `FrameSource` → `YoloDetector` → `ByteTracker` → drawn `id=<n> <class> <confidence>` labels, to `--output` and/or `--display` |
 | Tracker test coverage (Section 3, Section 16) | `[IMPLEMENTED]` | `tests/test_tracker.py` | 6 tests directly against `ByteTracker` (id stability, crossing paths, occlusion recovery vs. timeout, field propagation) + 1 integration test (`test_detector_to_tracker_pipeline_on_real_fixture_frames`) chaining `YoloDetector` → `ByteTracker` on `sample_video_path` |
 | MOTA / IDF1 tracking accuracy metrics (Section 3, Section 15) | `[PLANNED]` | — | requires ground-truth tracking annotations TRACE does not have yet; deliberately not computed or estimated this phase |
+| Trajectory / per-step motion analysis (Section 4) | `[IMPLEMENTED — pixel-space only]` | `src/trajectories/trajectory.py` | `centroid(bbox)`, `magnitude(vector)`, `MotionStep` (dataclass: `object_id`, `frame_id`, `timestamp`, `position`, `displacement`, `velocity`, `speed`, `direction`, `acceleration`, `is_stationary`), `Trajectory` (`update(position, timestamp, frame_id) -> MotionStep \| None`), `TrajectoryManager` (`update(tracks: list[Track]) -> list[MotionStep]`, `get_path(object_id)`) |
+| Trajectory sanity-check CLI (Section 4, Section 8) | `[IMPLEMENTED]` | `scripts/trajectory_video.py` | `main()` — wires `FrameSource` → `YoloDetector` → `ByteTracker` → `TrajectoryManager` → drawn path + box (color signals stationary/moving) + speed/state label, to `--output` and/or `--display` |
+| Trajectory test coverage (Section 4, Section 16) | `[IMPLEMENTED]` | `tests/test_trajectory.py` | constant velocity, a stop (deceleration signal), a direction change, jitter-tolerant stationary classification, `TrajectoryManager` routing via centroid |
+| Dwell time (Section 4, Section 9) | `[PLANNED]` | — | inherently zone-relative; deferred until zones exist in the Event Engine (Section 7) |
+| Real-world speed/distance correction (Section 4, Section 6) | `[PLANNED]` | — | Phase 5 (geometry/homography) and Phase 6 (speed estimation); Phase 4 motion is pixel-space only, by design |
 
 ### What I should know
 - [ ] I can explain why the API sits between the pipeline/database and every consumer (dashboard, agent).
