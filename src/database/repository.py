@@ -172,3 +172,33 @@ def get_track_points_for_object(session: Session, tracked_object: TrackedObject)
             select(TrackPoint).where(TrackPoint.object_id == tracked_object.id).order_by(TrackPoint.timestamp)
         ).scalars()
     )
+
+
+# --- read-only lookups added in Phase 9 for the API layer, so route handlers
+# never need a raw ORM query of their own (Section 10: no raw SQL in routes) ---
+
+
+def get_camera(session: Session, camera_id: str) -> Optional[Camera]:
+    return session.execute(select(Camera).where(Camera.camera_id == camera_id)).scalar_one_or_none()
+
+
+def get_object(session: Session, id: int) -> Optional[TrackedObject]:  # noqa: A002 -- matches the REST resource id
+    return session.get(TrackedObject, id)
+
+
+def list_events_for_camera(
+    session: Session,
+    camera: Camera,
+    *,
+    event_type: Optional[str] = None,
+    start_time: Optional[float] = None,
+    end_time: Optional[float] = None,
+) -> List[Event]:
+    query = select(Event).where(Event.camera_id == camera.id)
+    if event_type is not None:
+        query = query.where(Event.event_type == event_type)
+    if start_time is not None:
+        query = query.where(Event.timestamp >= start_time)
+    if end_time is not None:
+        query = query.where(Event.timestamp <= end_time)
+    return list(session.execute(query.order_by(Event.timestamp)).scalars())

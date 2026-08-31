@@ -792,26 +792,42 @@ An API decouples the CV/database internals from anything that consumes them — 
 
 A clean separation: **API layer** (routes, request/response shapes) → **service layer** (business logic: "what does creating a zone actually involve") → **database/repository layer** (raw queries/ORM calls). This is what Engineering Rule #3 ("keep CV, business logic, database, API, and agent layers modular") means concretely for the backend — a route handler should not contain raw SQL, and a database function should not know about HTTP.
 
-### Validation and error handling
+**Implemented simplification, not an oversight**: TRACE's API routes call the Phase 8 repository/analytics layers *directly*, with no separate service-layer module in between. At this scope, every route's "business logic" is either a single repository call plus a not-found check (cameras, videos, zones, lines, object trajectory) or a fixed bundle of analytics queries (`GET /analytics`) — a service layer that only ever forwards one call 1:1 would be pure indirection, not a real separation of concerns. The layering principle still holds where it matters: no route handler contains raw SQL or ORM queries of its own (Section 10's actual rule) — `api/common.py`'s `get_camera_or_404` and every route call into `database.repository`/`analytics.queries` for that. Revisit if a route ever needs real multi-step business logic beyond "look up, maybe 404, delegate."
+
+### Validation and error handling `[IMPLEMENTED]`
 
 - Validation happens automatically at the API boundary via Pydantic schemas (reject malformed input early).
 - Error handling: convert internal exceptions (not-found, invalid zone geometry, database errors) into meaningful HTTP status codes and structured error responses, not raw stack traces.
+- **How TRACE does each of the three required cases**: 422 for a malformed body/query param is automatic (Pydantic + FastAPI, including a custom `field_validator` for domain rules like "a zone needs ≥3 points" or "a line's start/end must differ" — a plain `ValueError` inside a validator becomes a 422 with no extra code). 404 is raised explicitly once a repository lookup returns `None` (`api/common.py::get_camera_or_404`, and inline in `objects.py` for an unknown trajectory id) — never silently returning an empty/default value. 500 is caught by one global handler (`app.exception_handler(Exception)` in `api/app.py`) that logs the real exception server-side and always returns the same clean `{"detail": "internal server error"}` body — verified by test (`tests/test_api.py::test_unexpected_error_returns_clean_500_not_a_stack_trace`, which monkeypatches a repository function to raise and asserts the response body never contains the exception's class name or a traceback).
 
-### The actual TRACE API `[PLANNED]`
+### The actual TRACE API `[IMPLEMENTED — all seven Section 8/9 CRUD/query endpoints; agent/alerts are [PLANNED], Phases 11–12]`
 
-| Endpoint | Purpose | Input | Output |
-|---|---|---|---|
-| `POST /videos` | Register/ingest a video file for offline processing | file reference/path, camera_id | video record |
-| `POST /cameras` | Register a camera source (live or file-backed) | name, location, calibration info | camera record |
-| `GET /cameras/{id}/events` | List events for a camera, filterable by time range/type | camera_id, query params | list of events |
-| `GET /objects/{id}/trajectory` | Full trajectory of one tracked object | object_id | ordered list of track_points |
-| `GET /analytics` | Aggregated stats (Section 11) | filters (camera, time range) | aggregated metrics |
-| `POST /zones` | Configure a polygon zone on a camera | camera_id, polygon coordinates | zone record |
-| `POST /lines` | Configure a virtual line on a camera | camera_id, line coordinates | line record |
-| `POST /agent/query` | Ask the Vision Agent a natural-language question | question text, optional context | agent's grounded answer |
-| `POST /alerts` | Configure or trigger an alert rule | rule definition | alert/rule record |
+| Endpoint | Purpose | Input | Output | Route function |
+|---|---|---|---|---|
+| `POST /videos` | Register/ingest a video file for offline processing | `VideoCreate` (camera_id, path, started_at?) | `VideoRead` | `api/routers/videos.py::create_video` |
+| `POST /cameras` | Register a camera source (live or file-backed) | `CameraCreate` (camera_id, name?, location?, calibration_reference?) | `CameraRead` | `api/routers/cameras.py::create_camera` |
+| `GET /cameras/{camera_id}/events` | List events for a camera, filterable by time range/type | path `camera_id` (string), query `event_type?`/`start_time?`/`end_time?` | `list[EventRead]` | `api/routers/cameras.py::list_camera_events` |
+| `GET /objects/{id}/trajectory` | Full trajectory of one tracked object | path `id` (int, internal DB PK — see note below) | `TrajectoryRead` | `api/routers/objects.py::get_object_trajectory` |
+| `GET /analytics` | Aggregated stats (Section 11) | query `camera_id?`/`start_time?`/`end_time?` | `AnalyticsSummary` (bundles 7 of Section 11's 8 functions) | `api/routers/analytics.py::get_analytics` |
+| `POST /zones` | Configure a polygon zone on a camera | `ZoneCreate` (camera_id, zone_id, polygon — validated ≥3 points) | `ZoneRead` | `api/routers/zones.py::create_zone` |
+| `POST /lines` | Configure a virtual line on a camera | `LineCreate` (camera_id, line_id, start, end — validated start≠end) | `LineRead` | `api/routers/lines.py::create_line` |
+| `POST /agent/query` | Ask the Vision Agent a natural-language question | question text, optional context | agent's grounded answer | `[PLANNED]` — Phase 11, depends on the not-yet-built Vision Agent |
+| `POST /alerts` | Configure or trigger an alert rule | rule definition | alert/rule record | `[PLANNED]` — Phase 12, depends on a not-yet-built alert-rule system |
 
-*(Implementation locations to be filled in Section 19 once code exists.)*
+**Two deliberate path-parameter decisions, since the table above only wrote `{id}` generically:**
+- `GET /cameras/{camera_id}/events` uses the camera's human-readable **string** id (`"demo"`, `"gate_2"`) — the identifier already used everywhere else in this codebase (config filenames, `EventEngine(camera_id=...)`, the event schema itself).
+- `GET /objects/{id}/trajectory` uses the object's **internal integer database primary key** (`TrackedObject.id`), not the Tracker's own per-camera `object_id` (Section 3) — that id is only unique within one camera's tracker instance (Phase 8's own documented limitation), so it can't identify a REST resource unambiguously across cameras. The internal PK can.
+
+**`POST /cameras`, `/zones`, `/lines` are idempotent by their string id**, inheriting `get_or_create_*` semantics directly from the Phase 8 repository — posting the same `camera_id`/`zone_id`/`line_id` twice returns/updates the existing row rather than erroring with a conflict. A deliberate simplification at this scope, not an oversight.
+
+### Where this is implemented `[IMPLEMENTED]`
+
+- `src/api/app.py` — the FastAPI app, router registration, the global 500 handler.
+- `src/api/deps.py` — `get_db()`, one SQLAlchemy session per request (overridden in tests to reuse the same rolled-back-transaction session as the repository/analytics tests).
+- `src/api/schemas.py` — every Pydantic request/response model, including the two custom validators described above.
+- `src/api/common.py` — `get_camera_or_404`, the one small piece of shared "look up or fail" logic every camera-scoped route needs.
+- `src/api/routers/` — `cameras.py`, `videos.py`, `zones.py`, `lines.py`, `objects.py`, `analytics.py`, one module per resource.
+- Tests: `tests/test_api.py`, using FastAPI's `TestClient` — one success and one failure case per endpoint (15 tests total), plus the 500-handler test. **Real finding while writing these, not a framework bug**: Starlette's `TestClient` re-raises the original exception for debuggability by default (`raise_server_exceptions=True`) even when a registered exception handler already produced a real response — the 500 test needed `TestClient(app, raise_server_exceptions=False)` to actually observe the clean response instead of the raw exception. Also verified against a real running `uvicorn` server with `curl` (not just `TestClient`), including the 404 and 422 paths, since this environment's FastAPI/Starlette versions turned out newer than expected and `TestClient`-only verification felt worth double-checking.
 
 ---
 
@@ -901,6 +917,17 @@ Every function in this section is a read-only SQL query against the tables Secti
 | Migration tooling (e.g. Alembic) for evolving an already-deployed schema (Section 9) | `[PLANNED]` | — | `create_all()` is schema *setup* (dev/tests), not a migration tool; out of scope for Phase 8 |
 | `busiest_hours` wall-clock anchoring for file-based (video-relative) sources (Section 11) | `[PLANNED]` | — | `videos.started_at` exists in the schema for this but isn't wired in yet; confirmed real limitation, see Section 11 |
 | `ZoneDetector.is_inside()` accessor (Section 5) | `[IMPLEMENTED — added in Phase 7]` | `src/geometry/zone.py` | purely additive read-only method exposing debounced containment state, needed to feed `LOITERING`'s `DwellTracker`; existing `ZoneDetector` tests and behavior unchanged |
+| FastAPI app + global error handling (Section 10) | `[IMPLEMENTED]` | `src/api/app.py` | `app` (FastAPI instance), `handle_unexpected_error` (catches `Exception`, returns clean `{"detail": "internal server error"}`, never a stack trace) |
+| Request-scoped DB session dependency (Section 10) | `[IMPLEMENTED]` | `src/api/deps.py` | `get_db()` |
+| API request/response schemas + validation (Section 10) | `[IMPLEMENTED]` | `src/api/schemas.py` | `CameraCreate`/`Read`, `VideoCreate`/`Read`, `ZoneCreate`/`Read` (≥3-point polygon validator), `LineCreate`/`Read` (start≠end validator), `EventRead`, `TrackPointRead`, `TrajectoryRead`, `AnalyticsSummary` |
+| `POST /cameras`, `POST /videos` (Section 10) | `[IMPLEMENTED]` | `src/api/routers/cameras.py`, `src/api/routers/videos.py` | `create_camera`, `create_video` |
+| `GET /cameras/{camera_id}/events` (Section 7, Section 10) | `[IMPLEMENTED]` | `src/api/routers/cameras.py` | `list_camera_events` |
+| `GET /objects/{id}/trajectory` (Section 4, Section 10) | `[IMPLEMENTED]` | `src/api/routers/objects.py` | `get_object_trajectory` — `{id}` is the internal DB PK, not the Tracker's per-camera `object_id` |
+| `POST /zones`, `POST /lines` (Section 5, Section 10) | `[IMPLEMENTED]` | `src/api/routers/zones.py`, `src/api/routers/lines.py` | `create_zone`, `create_line` |
+| `GET /analytics` (Section 11, Section 10) | `[IMPLEMENTED]` | `src/api/routers/analytics.py` | `get_analytics` — bundles 7 of Section 11's 8 functions (`busiest_hours` omitted from the default bundle; callable directly from `analytics.queries` if needed) |
+| API test coverage — 1 success + 1 failure per endpoint, plus the 500 handler (Section 10, Section 16) | `[IMPLEMENTED]` | `tests/test_api.py` | 15 tests via FastAPI's `TestClient`; also manually verified against a real running `uvicorn` server with `curl` |
+| `POST /agent/query` (Section 10, Section 12) | `[PLANNED]` | — | depends on the not-yet-built Vision Agent |
+| `POST /alerts` (Section 10) | `[PLANNED]` | — | depends on a not-yet-built alert-rule system |
 
 ### What I should know
 - [ ] I can explain why the API sits between the pipeline/database and every consumer (dashboard, agent).
