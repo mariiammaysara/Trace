@@ -11,3 +11,8 @@ venv/
 # data/ contents (keep the directory tracked via .gitkeep)
 data/*
 !data/.gitkeep
+
+# downloaded model weights (fetched on demand by ultralytics, not source)
+*.pt
+*.onnx
+*.engine

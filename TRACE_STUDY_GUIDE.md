@@ -228,11 +228,29 @@ TRACE needs **detection**: it must localize multiple objects per frame, not just
 - Training: the model learns weights from labeled data (gradient descent, backprop) — TRACE does **not** train a detector from scratch by default; it uses a pretrained model and may fine-tune later if needed.
 - Inference: running the already-trained model forward on new frames — this is the only thing the real-time pipeline does.
 
-### Why we choose our detector for TRACE `[PLANNED — decision pending benchmarking, Section 20]`
+### Why we choose our detector for TRACE `[IMPLEMENTED — provisional, pending benchmarking, Section 20]`
 
-- Default candidate: a YOLO variant, for tooling maturity, speed, and ease of export to ONNX/TensorRT (Section 14).
-- RT-DETR kept as a documented alternative to benchmark against once the pipeline is running (Section 20 experiment).
-- Decision criteria once both are tried: FPS on target hardware, accuracy on TRACE's actual scenes, ease of deployment.
+- **Chosen for now: YOLOv8n (Ultralytics, COCO-pretrained, `yolov8n.pt`)** — the nano variant, for the same reasons Section 2 always named as the default candidate: tooling maturity, speed, ease of export to ONNX/TensorRT later (Section 14), and it needed zero training to get a working Phase 2 pipeline end-to-end.
+- **This is a provisional pick, not a final one.** It has not been benchmarked against RT-DETR or larger YOLO variants (s/m/l) on real TRACE-like scenes — that comparison is still `[PLANNED]` for Section 20. Nano was chosen purely to get inference working fast; Phase 13 (Benchmarks) is where FPS/accuracy trade-offs actually get measured and this choice gets revisited.
+- RT-DETR remains the documented alternative to benchmark against once real accuracy/FPS numbers are needed.
+
+### Where this is implemented `[IMPLEMENTED]`
+
+- `src/detection/detector.py` — `Detection` (dataclass: `bbox`, `class_name`, `confidence`, `frame_id`, `timestamp`) and the abstract `Detector` interface (`detect(frame: Frame) -> list[Detection]`), so the concrete model stays swappable per this section's design decision above.
+- `src/detection/yolo_detector.py` — `YoloDetector(Detector)`: `__init__(model_path: str = "yolov8n.pt", confidence_threshold: float = 0.25, class_allowlist: tuple[str, ...] | None = DEFAULT_CLASS_ALLOWLIST, device: str | None = None)`. `DEFAULT_CLASS_ALLOWLIST = ("person", "car", "motorcycle", "bus", "truck", "bicycle")`. Confidence filtering is delegated to Ultralytics' own `conf=` parameter (NMS included); class-allowlist filtering happens after, by class name.
+- `Detection.bbox` is **xyxy**: `(x_min, y_min, x_max, y_max)` in absolute pixel coordinates of the source frame, top-left origin — documented explicitly in the dataclass docstring since Section 1.3 flags xyxy/xywh mismatches as a classic bug.
+- **A real color-space trap found and handled here:** `Frame.image` is RGB (Phase 1's boundary conversion), but Ultralytics' numpy-array `predict()` path assumes a BGR array and flips it internally (`BasePredictor.preprocess`, confirmed by reading the Ultralytics source) — feeding it `Frame.image` directly would silently double-flip the channels. `YoloDetector.detect()` converts RGB back to BGR immediately before calling `predict()` for exactly this reason. This is the same class of bug Section 1.1 describes in the abstract; this is where it actually showed up.
+- `scripts/detect_video.py` — CLI wiring `FrameSource` → `YoloDetector` → drawn boxes, either saved to `--output <path>` (`cv2.VideoWriter`) and/or shown live with `--display`; also takes `--frame-skip`, `--confidence`, `--classes`, `--model`.
+- `tests/test_detector.py` — 5 tests against a fake `ultralytics.YOLO` (monkeypatched, no weights download) covering allowlist filtering, confidence-threshold pass-through, and invalid-input errors; 1 integration test running the real pretrained model against real fixture frames, asserting only that returned `Detection` objects are well-formed (valid bbox ordering, confidence in `[0, 1]`, non-empty class name) — never asserting specific detections, since YOLO output on arbitrary frames isn't deterministic enough to pin down.
+- Downloaded weights (e.g. `yolov8n.pt`) are gitignored (`*.pt`, `*.onnx`, `*.engine`) — Ultralytics fetches them on first use, they are not committed as source.
+
+### Observed limitations (Phase 2 testing)
+
+*Recorded here from manual testing of `YoloDetector`/`scripts/detect_video.py` against a real ~8s/244-frame webcam clip (`data/sample.mp4`, gitignored/local-only), person class only. Not yet moved into Section 17 (Failure Cases & Debugging) because that section doesn't exist in this guide yet — link/move these there once it does.*
+
+- **Vertical box undershoot.** Across every sampled frame, the bottom edge of the `person` box consistently lands around mouth/chin height instead of extending to include the visible chin/neck — a small but consistent bias toward a too-short box on a close, partially-out-of-frame subject.
+- **Duplicate detection at frame 241** (t≈16.067s): two overlapping `person` boxes returned for the same real person in the same frame — one at confidence 0.7x covering the full head, and a second at confidence 0.28 covering just the left portion of the hair. Looks like an NMS near-miss: the two candidate boxes' IoU likely sat just under the suppression threshold, plausibly triggered by hair motion blur in that frame.
+- **No false positives on background** — the wardrobe, ceiling fan, and wall were never spuriously boxed in any sampled frame across the clip.
 
 ### What I should know
 - [ ] I can explain detection vs classification vs segmentation in one sentence each.
@@ -715,6 +733,10 @@ A clean separation: **API layer** (routes, request/response shapes) → **servic
 | Video ingestion / frame loop, frame skipping, BGR→RGB boundary (Section 8) | `[IMPLEMENTED]` | `src/detection/frame_source.py` | `Frame` (dataclass: `image`, `frame_id`, `timestamp`, `source_id`), `FrameSource(source: str \| int, source_id: str \| None = None, frame_skip: int = 1)` with `.read() -> Frame \| None`, `.release()`, `.is_live` |
 | Frame preview / sanity-check CLI (Section 8) | `[IMPLEMENTED]` | `scripts/preview_frames.py` | `main()` — prints `frame_id` + `timestamp` for the first N frames of a file or camera source |
 | FrameSource test coverage (Section 8, Section 16) | `[IMPLEMENTED]` | `tests/test_frame_source.py`, `tests/conftest.py` | fixtures `sample_video_path`, `sample_video_frame_count`; synthetic video generated at `tests/fixtures/sample_video.mp4` |
+| Detector interface + Detection schema (Section 2) | `[IMPLEMENTED]` | `src/detection/detector.py` | `Detection` (dataclass: `bbox` xyxy pixel coords, `class_name`, `confidence`, `frame_id`, `timestamp`), `Detector` (ABC, `detect(frame: Frame) -> list[Detection]`) |
+| Concrete detector — YOLOv8n, pretrained, provisional (Section 2) | `[IMPLEMENTED — provisional, see Section 2 for the benchmarking caveat]` | `src/detection/yolo_detector.py` | `YoloDetector(Detector)` — `__init__(model_path="yolov8n.pt", confidence_threshold=0.25, class_allowlist=DEFAULT_CLASS_ALLOWLIST, device=None)`; `DEFAULT_CLASS_ALLOWLIST = ("person", "car", "motorcycle", "bus", "truck", "bicycle")` |
+| Detection sanity-check CLI (Section 2, Section 8) | `[IMPLEMENTED]` | `scripts/detect_video.py` | `main()` — wires `FrameSource` → `YoloDetector` → drawn boxes, to `--output` and/or `--display` |
+| Detector test coverage (Section 2, Section 16) | `[IMPLEMENTED]` | `tests/test_detector.py` | mocked-model tests (`_FakeYOLO`, monkeypatches `ultralytics.YOLO`) + one real-model integration test (`test_yolo_detector_returns_well_formed_detections_on_real_frames`) against `sample_video_path` |
 
 ### What I should know
 - [ ] I can explain why the API sits between the pipeline/database and every consumer (dashboard, agent).
