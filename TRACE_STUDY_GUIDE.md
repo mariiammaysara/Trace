@@ -416,11 +416,12 @@ Output: stable object_id per surviving/updated track this frame
 - An object is "stationary" if its velocity stays below a small noise-tolerant threshold for some duration — this threshold must account for natural detection/tracking jitter, or every parked object will falsely flicker between "moving" and "stationary."
 - **How TRACE uses it (for now):** a single configurable speed threshold (px/s) applied per step, no sustained-duration/hysteresis logic yet — that's Section 7's `LOITERING`/`STOPPED` territory (deciding whether a brief tracking loss resets a duration timer, etc.), not this module's job. The threshold has no single correct default — it depends on frame rate and camera distance/resolution, since a few pixels of normal jitter maps to very different px/s depending on fps.
 
-### Dwell time `[PLANNED]`
+### Dwell time `[IMPLEMENTED — bookkeeping only; real zone-membership detection is still [PLANNED]]`
 
 - Total time an object's track has spent inside a defined zone (or simply "present in frame," depending on the metric).
 - Computed as `exit_timestamp - entry_timestamp` per zone-visit, summed if the object enters/exits multiple times.
-- Not implemented in Phase 4 — it's inherently zone-relative, and zones don't exist until the Event Engine (Section 7). What Phase 4 provides (per-object position history with timestamps) is exactly what dwell time will be computed from later.
+- **Where:** `src/trajectories/dwell.py` — `ZoneVisit` (dataclass: `object_id`, `zone_id`, `entry_timestamp`, `exit_timestamp`, `.duration` property) and `DwellTracker` (`update(object_id, zone_id, is_inside: bool, timestamp) -> ZoneVisit | None`, returning the completed visit exactly when a call transitions inside→outside; `.visits(object_id, zone_id)`; `.total_dwell_time(object_id, zone_id, include_open=True, current_timestamp=None)`).
+- **Deliberately decoupled from *how* zone membership is determined.** Real point-in-polygon zone detection (Section 7's `ZONE_ENTERED`/`ZONE_EXITED`) is still `[PLANNED]` — that geometric check was scoped for a "Phase 5: line crossing and zone detection" that hasn't been implemented yet (its requirements were never fully specified). Rather than block dwell-time bookkeeping on that, `DwellTracker` takes a plain `is_inside` boolean per call — whatever eventually computes real zone membership just needs to call `update()` with that boolean; this module doesn't change. Tested with a hand-authored `is_inside` sequence (`tests/test_dwell.py`), not real geometry.
 
 ### The math, at implementation level `[IMPLEMENTED — matches the code exactly]`
 
@@ -482,11 +483,18 @@ acceleration_i = (velocity_i - velocity_{i-1}) / (t_i - t_{i-1})
 - **Extrinsic parameters**: the camera's position and orientation (rotation + translation) relative to the world. Changes if you move or re-aim the camera.
 - Full 3D calibration (checkerboard-based, OpenCV `calibrateCamera`) recovers both — but is often more than TRACE needs for a fixed, roughly-planar-ground scene.
 
-### Homography and perspective transformation
+### Homography and perspective transformation `[IMPLEMENTED]`
 
 - A **homography** is a 2D-to-2D projective transformation that maps points on a flat plane in the image (e.g., a road surface) to real-world coordinates on that same plane, given a handful of known correspondence points (e.g., 4 points whose real-world distances are known/measured).
 - This is the **practical, lightweight calibration TRACE relies on** by default: mark 4+ reference points in the camera view whose real-world layout is known (e.g., measured lane markings), compute a homography, and use it to convert any pixel position on that ground plane to an approximate real-world position — without needing full intrinsic/extrinsic camera calibration.
 - **Key limitation:** homography is only valid for points on the calibrated *plane* (typically the ground). It does not correctly map a point at head-height (a person's centroid) to ground-plane real-world coordinates without an added approximation (e.g., using the bottom-center of the box instead of the centroid, since it's closer to where the object contacts the ground).
+
+### Where this is implemented `[IMPLEMENTED]`
+
+- `src/geometry/homography.py` — `ground_contact_point(bbox)` (bottom-center, `((x_min+x_max)/2, y_max)`, deliberately not the centroid — the docstring cites this exact section as the reason); `GroundPlaneHomography` (`__init__(pixel_points, world_points)`, wraps `cv2.findHomography` + `cv2.perspectiveTransform`, `.pixel_to_world(pixel_point) -> (x, y)`, `.from_correspondences(...)`, `.from_config(path)`); `load_camera_homography(camera_id, configs_dir="configs/cameras")`.
+- Correspondences are stored per camera as JSON under `configs/cameras/<camera_id>.json` (`{"camera_id": ..., "correspondences": [{"pixel": [x, y], "world": [X, Y]}, ...]}`) — plain JSON, no new dependency, matching this repo's existing config conventions. `configs/cameras/demo.json` ships as a worked, clearly-labeled **illustrative example only** (a uniform 20px = 1m plane, chosen so the mapping is easy to hand-verify) — not a real calibration; using it for an actual camera would be meaningless.
+- **Real, tested tolerance**: on the demo config's synthetic 20px = 1m plane, `pixel_to_world()` recovers both the calibration points themselves and held-out points within `1e-6` absolute error (`tests/test_homography.py`) — but that number reflects `cv2.findHomography`'s numerical precision on a clean, noise-free synthetic correspondence set, not real-world calibration accuracy. A real camera's actual error is dominated by how precisely the reference points were measured (Section 6's error table), which this test cannot speak to.
+- `GroundPlaneHomography` requires at least 4 correspondences and raises `ValueError` on too few or mismatched pixel/world point counts — enforced, not just documented.
 
 ### Why pixel movement ≠ real-world movement
 
@@ -516,7 +524,7 @@ Any speed/distance calculation done directly in pixels will be systematically wr
 
 As established in Section 5, pixel displacement is a *distorted, position-dependent* proxy for real-world displacement. Naively computing `speed = pixels_moved / seconds` produces numbers with no consistent real-world meaning and — if reported as km/h without qualification — is **misleading**, not just imprecise.
 
-### The correct(ed) approach TRACE uses `[PLANNED]`
+### The correct(ed) approach TRACE uses `[IMPLEMENTED]`
 
 ```text
 1. Pixel position (bottom-center of box) at t1 and t2
@@ -525,6 +533,14 @@ As established in Section 5, pixel displacement is a *distorted, position-depend
 4. elapsed_time  = t2 - t1   (from frame timestamps, not assumed constant FPS)
 5. estimated_speed = real_distance / elapsed_time
 ```
+
+### Where this is implemented `[IMPLEMENTED]`
+
+- `src/geometry/speed.py` — `EstimatedSpeedSample` (dataclass: `object_id`, `frame_id`, `timestamp`, `world_position`, `estimated_speed`) and `SpeedEstimator` (`__init__(homography: GroundPlaneHomography)`, `update(tracks: list[Track]) -> list[EstimatedSpeedSample]`), implementing the 5-step algorithm above exactly.
+- Lives in `src/geometry/`, not `src/trajectories/` — a deliberate call, not a default: it's meaningless without a homography, whereas `trajectories/` (Phase 4) is deliberately pixel-space-only. Keeping it in `geometry/` also keeps this section and Section 5 co-located in one module, since neither means anything without the other.
+- `elapsed_time` comes from `Track.timestamp` (real per-frame timestamps from Phase 1's `FrameSource`, not `1/FPS`) — `tests/test_speed_estimator.py::test_uses_real_elapsed_time_not_assumed_fps` checks this directly: identical pixel displacement over 2x the elapsed time yields exactly half the `estimated_speed`.
+- **The "estimated_speed" naming convention below is enforced, not just documented convention**: `test_estimated_speed_field_name_is_the_documented_convention` asserts the dataclass field is literally named `estimated_speed` and that no field is named bare `speed`.
+- **Real, tested tolerance**: on the same synthetic 20px = 1m plane as Section 5, a known 1 m/s ground-truth motion is recovered as `estimated_speed` within `rel=1e-3` (`tests/test_speed_estimator.py`). Same caveat as Section 5 — this validates the arithmetic pipeline on clean synthetic input, not real-world accuracy, which is governed by the error sources below.
 
 ### Time / FPS considerations
 
@@ -783,7 +799,11 @@ A clean separation: **API layer** (routes, request/response shapes) → **servic
 | Trajectory sanity-check CLI (Section 4, Section 8) | `[IMPLEMENTED]` | `scripts/trajectory_video.py` | `main()` — wires `FrameSource` → `YoloDetector` → `ByteTracker` → `TrajectoryManager` → drawn path + box (color signals stationary/moving) + speed/state label, to `--output` and/or `--display` |
 | Trajectory test coverage (Section 4, Section 16) | `[IMPLEMENTED]` | `tests/test_trajectory.py` | constant velocity, a stop (deceleration signal), a direction change, jitter-tolerant stationary classification, `TrajectoryManager` routing via centroid |
 | Dwell time (Section 4, Section 9) | `[PLANNED]` | — | inherently zone-relative; deferred until zones exist in the Event Engine (Section 7) |
-| Real-world speed/distance correction (Section 4, Section 6) | `[PLANNED]` | — | Phase 5 (geometry/homography) and Phase 6 (speed estimation); Phase 4 motion is pixel-space only, by design |
+| Ground-plane homography calibration (Section 5) | `[IMPLEMENTED]` | `src/geometry/homography.py` | `ground_contact_point(bbox)`, `GroundPlaneHomography` (`.pixel_to_world()`, `.from_correspondences()`, `.from_config()`), `load_camera_homography(camera_id, configs_dir)`; example config `configs/cameras/demo.json` |
+| Real-world estimated_speed (Section 6) | `[IMPLEMENTED]` | `src/geometry/speed.py` | `EstimatedSpeedSample` (dataclass, field is `estimated_speed`, never bare `speed`), `SpeedEstimator` (`update(tracks: list[Track]) -> list[EstimatedSpeedSample]`) |
+| Homography + speed test coverage (Section 5, Section 6, Section 16) | `[IMPLEMENTED]` | `tests/test_homography.py`, `tests/test_speed_estimator.py` | synthetic 20px=1m plane: known-point recovery within `1e-6` abs, known 1 m/s motion recovered within `rel=1e-3`, real-elapsed-time (not FPS) check, `estimated_speed` naming enforced by a dedicated test |
+| Dwell-time bookkeeping (Section 4) | `[IMPLEMENTED — bookkeeping only, real zone detection is [PLANNED]]` | `src/trajectories/dwell.py` | `ZoneVisit`, `DwellTracker` (`update(object_id, zone_id, is_inside, timestamp)`, `.visits()`, `.total_dwell_time()`); consumes a plain `is_inside` boolean, decoupled from the point-in-polygon geometry that would produce it |
+| Line-crossing / zone point-in-polygon detection (Section 7) | `[PLANNED]` | — | scoped as a "Phase 5: line crossing and zone detection," but that request was never fully specified (cut off before requirements arrived) and hasn't been implemented; `DwellTracker` above is ready to consume its output the moment it exists |
 
 ### What I should know
 - [ ] I can explain why the API sits between the pipeline/database and every consumer (dashboard, agent).

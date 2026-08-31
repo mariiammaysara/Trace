@@ -1,0 +1,10 @@
+{
+  "camera_id": "demo",
+  "_comment": "Illustrative example only -- NOT a real camera calibration. pixel/world correspondences below describe a flat, uniform 20px = 1m ground plane purely so the mapping is easy to hand-verify. Replace with real measured correspondences (4+ points on the actual ground plane, with their real-world positions measured or surveyed) before using this for any real camera.",
+  "correspondences": [
+    { "pixel": [0, 0], "world": [0, 0] },
+    { "pixel": [100, 0], "world": [5, 0] },
+    { "pixel": [100, 100], "world": [5, 5] },
+    { "pixel": [0, 100], "world": [0, 5] }
+  ]
+}
