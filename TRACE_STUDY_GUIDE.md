@@ -720,13 +720,13 @@ Live pipeline state (in-memory tracks) disappears the moment the process stops. 
 - **Primary keys** — unique identifier per row (e.g., `event.id`).
 - **Foreign keys** — link rows across tables (e.g., `event.object_id → objects.id`), enforcing that events always reference a real tracked object.
 - **Indexes** — speed up lookups/filters on specific columns (e.g., indexing `events.timestamp` and `events.camera_id` since almost every analytics/agent query filters by time range and camera).
-- **Timestamps** — every table that represents something that happened needs one, stored consistently (UTC) to avoid timezone bugs across cameras/deployments.
+- **Timestamps** — every table that represents something that happened needs one, stored consistently (UTC) to avoid timezone bugs across cameras/deployments. **Implemented deviation, documented, not an oversight**: per-frame timestamps (`track_points.timestamp`, `events.timestamp`, `objects.first_seen`/`last_seen`) are stored as `Float` seconds, matching the convention used everywhere in this codebase since Phase 1 — not a UTC `DateTime`. File-based sources are video-relative (Phase 1), not wall-clock; a `DateTime` column would silently misrepresent that. `videos.started_at` is the one genuine `DateTime` — it records when the file was registered for processing, a real wall-clock moment, not a per-frame value.
 
 ### Why PostgreSQL
 
 Mature, free, strong support for relational integrity, indexing, and time-range queries — a solid default for a system whose core value is structured, queryable history. (Not chosen for anything exotic like PostGIS/geo features at this stage, though zone polygons could eventually benefit from them — flagged as `[OPTIONAL]` future work.)
 
-### The TRACE schema `[PLANNED]`
+### The TRACE schema `[IMPLEMENTED]`
 
 | Table | Purpose |
 |---|---|
@@ -752,6 +752,17 @@ lines   1──* events         (line-crossing events reference which line)
 ```
 
 This structure is exactly what lets an event be traced back to "reconstruct an object's history" (spec requirement) — from an `events` row you can join to `objects` and `track_points` to get the full trajectory around that moment, and to `videos`/`cameras` to locate the actual footage (Section 8's investigation feature).
+
+### Where this is implemented `[IMPLEMENTED]`
+
+- `src/database/models.py` — SQLAlchemy 2.0 declarative models for exactly the seven tables above: `Camera`, `Video`, `Zone`, `Line`, `TrackedObject` (Python class name for the `objects` table — `object` collides with a Python builtin), `TrackPoint`, `Event`. Foreign keys match the relationship diagram above exactly, enforced by Postgres itself (verified by test, not just declared — `tests/test_database_schema.py` inserts a duplicate `(camera_id, object_id)` pair and confirms Postgres raises `IntegrityError`, same for duplicate `camera_id`).
+- `Event.event_metadata` is the Python attribute name for the actual DB column `metadata` (`Base.metadata` is a reserved SQLAlchemy name on every model, so the column needed an explicit name override) — the JSON contents match Section 7's `Event.metadata` exactly, just accessed under a different attribute name in Python.
+- `src/database/db.py` — `get_engine(database_url=None)` (defaults to `DEFAULT_DATABASE_URL`, the docker-compose `db` service as reachable from the host), `create_all(engine)` (schema setup for dev/tests — explicitly *not* a migration tool; a real migration tool like Alembic would be the next step for evolving an already-deployed schema, out of scope here), `get_session_factory(engine)`.
+- `src/database/repository.py` — the repository layer requested for Phase 9 reuse: `get_or_create_camera`, `create_video`, `get_or_create_zone`, `get_or_create_line`, `get_or_create_object`, `add_track_point`, `add_event`, `add_event_from_pipeline` (resolves an `events.event.Event`'s zone/line foreign keys automatically from its `metadata`), `get_events_for_object`, `get_track_points_for_object`. Pure data access — no business logic, no HTTP, matching Section 10's layering discussion.
+- **Known, documented limitation**: `objects.object_id` is the Tracker's own per-camera id (Section 3), which restarts from 1 on every new `ByteTracker` instance. `(camera_id, object_id)` is a stable key only *within one continuous pipeline run* — a process restart that starts a fresh tracker and reuses `object_id=1` gets merged into the same existing row rather than starting a new one, rather than being solved with a session/run identifier this phase didn't build.
+- **docker-compose.yml**: the `db` service (postgres:16) already existed from Phase 0 bootstrap; Phase 8 added a `ports: ["5433:5432"]` mapping so the host (and this repo's tests) can reach it directly, and removed the obsolete top-level `version:` key docker compose itself flagged as deprecated.
+- `scripts/persist_video.py` — the full pipeline wired to write, not just print: `FrameSource` → `YoloDetector` → `ByteTracker` → `EventEngine` → `repository` calls per frame (`get_or_create_object` + `add_track_point` for every track, `add_event_from_pipeline` for every event), committing every `--commit-every` frames (default 20). Verified against real footage: 100 frames of `data/sample.mp4` persisted 100 `track_points` and 18 `events`, then read back correctly through the analytics layer (Section 11) — including `busiest_hours` correctly landing everything in the 1970-01-01 UTC hour bucket, exactly per that function's documented video-relative-timestamp caveat, not a bug.
+- Tests: `tests/test_database_schema.py` (schema/constraint tests against real Postgres), `tests/test_repository.py` (insert a fake object + events, query back, confirm relationships resolve — the exact scenario requested), `tests/test_analytics.py` (see Section 11). All three use a `db_session` fixture (`tests/conftest.py`) built on SQLAlchemy 2.0's "join a session to an external transaction" pattern — every test runs inside a rolled-back transaction, so no test's data ever leaks into another's, even across `session.commit()` calls inside the code under test. Tests against the database **skip** (not fail) if `trace_test` isn't reachable, so the rest of the suite still runs without Docker up.
 
 ### What I should know
 - [ ] I can explain why in-memory-only tracking state is insufficient for TRACE's goals.
@@ -804,7 +815,38 @@ A clean separation: **API layer** (routes, request/response shapes) → **servic
 
 ---
 
-> **Note:** Sections 11–18, 20, and 21 (listed in the Table of Contents) have not been written yet — only Sections 0–10 exist below this point, plus Section 19 (Implementation Map), added here ahead of the sections it numerically follows so completed work has somewhere to be recorded. Fill in 11–18/20/21 as those phases are planned; renumber/reorder at that point if needed.
+## 11. Analytics
+
+*Added in Phase 8 alongside Section 9, since implementing the schema and querying it went together in one phase. Sections 12–18, 20, and 21 (listed in the Table of Contents) are still not written — see the note below.*
+
+### What analytics is, here
+
+Every function in this section is a read-only SQL query against the tables Section 9 defines — never a hardcoded or estimated number, and never computed by an LLM (the same determinism requirement Section 7's event engine has: an LLM may *ask* an analytics question later via a tool call, Section 12, but it never computes the answer itself).
+
+### The eight analytics functions `[IMPLEMENTED]`
+
+| Function | Answers | Computed from |
+|---|---|---|
+| `object_count` | How many distinct objects were tracked (optionally by camera/class/time range)? | `COUNT` over `objects`, filtered on `first_seen` |
+| `line_crossing_count` | How many raw line-crossing events happened? | `COUNT` of `LINE_CROSSED` events |
+| `zone_violation_count` | How many times was a configured zone entered? | `COUNT` of `ZONE_ENTERED` events — see the naming caveat below |
+| `average_dwell_time` | On average, how long do objects stay in a zone per visit? | Paired `ZONE_ENTERED`/`ZONE_EXITED` events per object per zone, matched in timestamp order, durations averaged |
+| `traffic_volume` | How many *distinct* objects passed a line (not double-counting repeat crossings)? | `COUNT(DISTINCT object_id)` of `LINE_CROSSED` events |
+| `busiest_hours` | Which hour(s) had the most events? | `Event.timestamp` bucketed by hour, counted, sorted — see the wall-clock caveat below |
+| `event_frequency` | How often does each event type happen? | `COUNT` of `events`, grouped by `event_type` |
+| `per_class_stats` | Per detected class, how many objects and events? | `COUNT` of `objects` and `events`, both grouped by `class_name` |
+
+**Naming note on `zone_violation_count`**: `ZONE_ENTERED`/`ZONE_EXITED` (Section 7) don't distinguish a "restricted" zone from any other configured zone — TRACE doesn't currently model that distinction. "Violation" here is the domain framing Section 0 uses for the same underlying event (a `ZONE_ENTERED` on a security-relevant zone *reads* as a violation), not a separate event_type. If TRACE later needs to distinguish restricted from non-restricted zones, that's a `Zone` schema change (e.g. a `restricted: bool` column), not an analytics-layer one.
+
+**`busiest_hours`'s real, tested limitation**: it treats `Event.timestamp` as Unix epoch seconds (UTC). That's exactly correct for live-camera events (Phase 1: `FrameSource` uses `time.time()` for camera sources) but **not** for file-based sources, whose timestamps are video-relative (Phase 1) — bucketing those by "hour" doesn't correspond to any real calendar hour. Confirmed empirically, not just reasoned about: persisting `data/sample.mp4` (a file source, timestamps starting near 0.0) and calling `busiest_hours` returns everything in the `1970-01-01T00:00 UTC` bucket — the Unix epoch, because a near-zero video-relative timestamp interpreted as epoch seconds *is* near the epoch. `videos.started_at` exists in the schema for exactly this kind of anchor but isn't wired into `busiest_hours` yet — `[PLANNED]`.
+
+### Where this is implemented `[IMPLEMENTED]`
+
+- `src/analytics/queries.py` — all eight functions above, plus a shared `_camera_pk()` helper that resolves a human-readable `camera_id` string to its internal integer primary key (or a sentinel that matches nothing, for an unknown `camera_id`, rather than raising or silently ignoring the filter).
+- Every function takes a SQLAlchemy `Session` as its first argument and keyword-only filters (`camera_id`, `class_name`, `zone_id`, `line_id`, `start_time`, `end_time` where relevant) — no hidden global state, no ORM session management inside the analytics layer itself.
+- `tests/test_analytics.py` — seeds a fully deterministic scenario (2 objects, 7 events, one completed 3.0s zone visit, 3 line crossings from 2 distinct objects) via the real repository layer, then asserts every one of the 8 functions against the exact expected number computed by hand from that scenario — not just "it returns something," a specific known value per function.
+
+> **Note:** Sections 12–18, 20, and 21 (listed in the Table of Contents) have not been written yet — only Sections 0–11 exist below this point, plus Section 19 (Implementation Map), added here ahead of the sections it numerically follows so completed work has somewhere to be recorded. Fill in 12–18/20/21 as those phases are planned; renumber/reorder at that point if needed.
 
 ## 19. Implementation Map
 
@@ -848,7 +890,16 @@ A clean separation: **API layer** (routes, request/response shapes) → **servic
 | Event Engine orchestrator (Section 7) | `[IMPLEMENTED]` | `src/events/engine.py` | `EventEngine` — wires `TrajectoryManager`, `SpeedEstimator`, `LineCrossingDetector`, `ZoneDetector`, `DwellTracker` internally; `update(tracks: list[Track], timestamp: float) -> list[Event]` |
 | End-to-end event pipeline CLI (Section 7, Section 8) | `[IMPLEMENTED]` | `scripts/event_video.py` | `main()` — `FrameSource` → `YoloDetector` → `ByteTracker` → `EventEngine`, printing each event |
 | Event engine test coverage (Section 7, Section 16) | `[IMPLEMENTED]` | `tests/test_events_*.py` (7 files), `tests/test_event_engine.py` | one file per event type/pair; engine-level flicker suppression, lifecycle timeout behavior, jitter-tolerant STOPPED, and a real-fixture-video structure-only smoke test |
-| Event database sink (Section 7, Section 9) | `[PLANNED]` | — | `scripts/event_video.py` currently prints events; persistence is Phase 8, not this phase |
+| Database schema — `cameras`, `videos`, `zones`, `lines`, `objects`, `track_points`, `events` (Section 9) | `[IMPLEMENTED]` | `src/database/models.py` | `Camera`, `Video`, `Zone`, `Line`, `TrackedObject`, `TrackPoint`, `Event` (SQLAlchemy 2.0 declarative) |
+| Database engine/session setup (Section 9) | `[IMPLEMENTED]` | `src/database/db.py` | `get_engine(database_url=None)`, `create_all(engine)`, `get_session_factory(engine)` |
+| Repository layer (Section 9, Section 10) | `[IMPLEMENTED]` | `src/database/repository.py` | `get_or_create_camera`, `create_video`, `get_or_create_zone`, `get_or_create_line`, `get_or_create_object`, `add_track_point`, `add_event`, `add_event_from_pipeline`, `get_events_for_object`, `get_track_points_for_object` |
+| Event database sink — Phase 7's Event Engine now actually persists, not just prints (Section 7, Section 9) | `[IMPLEMENTED]` | `scripts/persist_video.py` | `main()` — `FrameSource` → `YoloDetector` → `ByteTracker` → `EventEngine` → `repository` calls per frame |
+| Database schema/repository test coverage (Section 9, Section 16) | `[IMPLEMENTED]` | `tests/test_database_schema.py`, `tests/test_repository.py` | FK/constraint enforcement verified against real Postgres; repository round-trip (insert object + events, query back, relationships resolve) |
+| Postgres service exposed to the host (Section 9) | `[IMPLEMENTED]` | `docker-compose.yml` | `db` service (already existed from Phase 0) gained `ports: ["5433:5432"]`; obsolete top-level `version:` key removed |
+| Analytics — all 8 Section 11 functions (Section 11) | `[IMPLEMENTED]` | `src/analytics/queries.py` | `object_count`, `line_crossing_count`, `zone_violation_count`, `average_dwell_time`, `traffic_volume`, `busiest_hours`, `event_frequency`, `per_class_stats` |
+| Analytics test coverage, seeded with known expected results (Section 11, Section 16) | `[IMPLEMENTED]` | `tests/test_analytics.py` | deterministic seed scenario (2 objects, 7 events, one 3.0s zone visit, 3 crossings from 2 objects), every function asserted against its hand-computed expected value |
+| Migration tooling (e.g. Alembic) for evolving an already-deployed schema (Section 9) | `[PLANNED]` | — | `create_all()` is schema *setup* (dev/tests), not a migration tool; out of scope for Phase 8 |
+| `busiest_hours` wall-clock anchoring for file-based (video-relative) sources (Section 11) | `[PLANNED]` | — | `videos.started_at` exists in the schema for this but isn't wired in yet; confirmed real limitation, see Section 11 |
 | `ZoneDetector.is_inside()` accessor (Section 5) | `[IMPLEMENTED — added in Phase 7]` | `src/geometry/zone.py` | purely additive read-only method exposing debounced containment state, needed to feed `LOITERING`'s `DwellTracker`; existing `ZoneDetector` tests and behavior unchanged |
 
 ### What I should know
