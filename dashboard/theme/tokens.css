@@ -1,0 +1,32 @@
+/*
+ * TRACE color system -- the single source of truth for every color used in
+ * the dashboard. No component may hardcode a hex value; use these variables
+ * (or the Tailwind theme tokens in tailwind.config.js, which point straight
+ * back to these) instead.
+ *
+ * Brand colors come from the TRACE logo palette. Semantic states are
+ * DELIBERATELY outside the brand blues -- TRACE's real events/violations
+ * (OVERSPEED, ZONE_ENTERED on a restricted zone, LOITERING, ...) must be
+ * visually unmistakable at a glance, never just "a different shade of blue."
+ * A violation must always render in --color-danger, never a brand color.
+ */
+
+:root {
+  /* Brand */
+  --color-primary: #2f4157; /* darkest navy -- sidebar, header, primary nav, high-emphasis UI */
+  --color-secondary: #567c8e; /* buttons, active states, secondary emphasis */
+  --color-accent: #a2c1d1; /* chart accents, highlights, hover states */
+  --color-surface-alt: #e3ecf2; /* cards, subtle panel backgrounds */
+  --color-border: #c7d9e5; /* borders, dividers, secondary surfaces */
+  --color-background: #f3f6f9; /* main app background */
+  --color-surface: #ffffff; /* elevated surfaces (cards on top of background) */
+
+  /* Semantic states -- reserved for event badges, alert toasts, status dots,
+     and any chart series that specifically represents violations vs normal
+     activity. Everything else (nav, buttons, cards, default chart series,
+     borders) uses the brand palette above, not these. */
+  --color-success: #2e7d5b; /* e.g. line crossing resolved, system healthy */
+  --color-warning: #c58a24; /* e.g. approaching a threshold, degraded confidence */
+  --color-danger: #c94c4c; /* e.g. OVERSPEED, ZONE_ENTERED on a restricted zone, any violation */
+  --color-info: #567c8e; /* neutral informational states -- reuses brand secondary, not a new blue */
+}
