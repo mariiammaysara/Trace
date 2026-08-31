@@ -107,6 +107,15 @@ class ZoneDetector:
                 )
         return transitions
 
+    def is_inside(self, object_id: int, zone_id: str) -> bool:
+        """Current *confirmed* (debounced) containment for one object/zone pair,
+        without needing to wait for a fresh transition. False for any pair
+        never seen. Added for Phase 7's LOITERING rule, which needs a
+        continuous per-frame is_inside signal (not just transition events) to
+        feed trajectories.dwell.DwellTracker -- purely additive, doesn't
+        change update()'s existing behavior."""
+        return self._confirmed_inside.get((object_id, zone_id), False)
+
 
 def load_camera_zones(camera_id: str, configs_dir: "str | Path" = "configs/cameras") -> List[Zone]:
     """configs/cameras/<camera_id>.json's "zones" array -> list[Zone]. Empty if absent."""
