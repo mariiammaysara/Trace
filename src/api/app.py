@@ -18,29 +18,42 @@ Error handling:
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.routers import agent, alerts, analytics, cameras, lines, objects, videos, zones
+from logging_config import configure_logging
+
+configure_logging()
 
 logger = logging.getLogger("trace.api")
 
 app = FastAPI(title="TRACE API")
 
 # Needed for real use, not speculative: the dashboard (Phase 10) is a
-# separate Vite dev-server origin (localhost:5173 by default) calling this
-# API's fetch()/<video> requests from the browser -- without CORS, the
-# browser blocks every cross-origin request outright. Explicit origins, not
-# "*", since a wildcard would also have to disable credentials; there are
-# none to disable yet, but naming the real dev origins now is one line and
-# avoids a silent security regression if credentials are ever added later.
-# Add the deployed dashboard's real origin here before shipping anywhere
-# beyond local dev.
+# separate origin (the Vite dev server at localhost:5173, or the built
+# dashboard's own container/port in docker-compose) calling this API's
+# fetch()/<video> requests from the browser -- without CORS, the browser
+# blocks every cross-origin request outright. Explicit origins, not "*",
+# since a wildcard would also have to disable credentials; there are none to
+# disable yet, but naming real origins now is one line and avoids a silent
+# security regression if credentials are ever added later.
+# Externalized (TRACE_ALLOWED_ORIGINS, comma-separated) per Section 14 --
+# the deployed dashboard's real origin belongs in the environment, not a
+# code change, once this runs anywhere beyond local dev.
+_default_origins = "http://localhost:5173,http://127.0.0.1:5173"
+allowed_origins = [
+    origin.strip()
+    for origin in os.environ.get("TRACE_ALLOWED_ORIGINS", _default_origins).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=allowed_origins,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )

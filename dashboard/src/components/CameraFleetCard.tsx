@@ -1,6 +1,6 @@
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Video, CheckCircle2, Radio } from 'lucide-react'
+import { Video, CheckCircle2 } from 'lucide-react'
 import type { Camera } from '@/lib/api'
 import { cn } from '@/lib/utils'
 

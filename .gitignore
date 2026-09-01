@@ -8,6 +8,10 @@ venv/
 .ruff_cache/
 *.log
 
+# docker-compose's real, local override of .env.example -- may hold a real
+# ANTHROPIC_API_KEY or non-default database credentials, never committed.
+.env
+
 # data/ contents (keep the directory tracked via .gitkeep)
 data/*
 !data/.gitkeep

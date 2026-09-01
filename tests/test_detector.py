@@ -124,6 +124,24 @@ def test_default_model_path_reads_trace_detector_weights_env_var(monkeypatch):
         assert yolo_detector_module.DEFAULT_MODEL_PATH == "yolov8n.pt"
 
 
+def test_default_confidence_threshold_reads_trace_detector_confidence_env_var(monkeypatch):
+    # Same module-level-constant-bound-at-import-time situation as
+    # DEFAULT_MODEL_PATH above (Phase 16's deployment config externalization) --
+    # requires a reload, not a plain monkeypatch, for the same reason.
+    import importlib
+
+    import detection.yolo_detector as yolo_detector_module
+
+    monkeypatch.setenv("TRACE_DETECTOR_CONFIDENCE", "0.6")
+    try:
+        importlib.reload(yolo_detector_module)
+        assert yolo_detector_module.DEFAULT_CONFIDENCE_THRESHOLD == 0.6
+    finally:
+        monkeypatch.delenv("TRACE_DETECTOR_CONFIDENCE", raising=False)
+        importlib.reload(yolo_detector_module)  # restore the real default for every other test in this file
+        assert yolo_detector_module.DEFAULT_CONFIDENCE_THRESHOLD == 0.25
+
+
 # --- integration: real model, real fixture frames, structure-only assertions ---
 
 

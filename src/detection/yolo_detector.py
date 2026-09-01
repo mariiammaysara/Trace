@@ -28,6 +28,11 @@ DEFAULT_CLASS_ALLOWLIST = ("person", "car", "motorcycle", "bus", "truck", "bicyc
 # better fine-tune) -- explicit and configurable, per Phase 13's requirement.
 DEFAULT_MODEL_PATH = os.environ.get("TRACE_DETECTOR_WEIGHTS", "yolov8n.pt")
 
+# Same override pattern as DEFAULT_MODEL_PATH above -- Phase 16 externalized this
+# for deployment (docker-compose/production), where confidence thresholds are a
+# per-environment tuning knob, not something that should need a code change.
+DEFAULT_CONFIDENCE_THRESHOLD = float(os.environ.get("TRACE_DETECTOR_CONFIDENCE", "0.25"))
+
 
 class YoloDetector(Detector):
     """Pretrained YOLO (Ultralytics) behind the Detector interface. Inference only — no training
@@ -47,7 +52,7 @@ class YoloDetector(Detector):
     def __init__(
         self,
         model_path: str = DEFAULT_MODEL_PATH,
-        confidence_threshold: float = 0.25,
+        confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
         class_allowlist: "tuple[str, ...] | None" = DEFAULT_CLASS_ALLOWLIST,
         device: str | None = None,
     ) -> None:

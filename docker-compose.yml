@@ -1,23 +1,75 @@
 services:
-  app:
-    build: .
-    volumes:
-      - ./:/app
-    depends_on:
-      - db
-    environment:
-      DATABASE_URL: postgresql://trace:trace@db:5432/trace
-
   db:
     image: postgres:16
     environment:
-      POSTGRES_USER: trace
-      POSTGRES_PASSWORD: trace
-      POSTGRES_DB: trace
+      POSTGRES_USER: ${POSTGRES_USER:-trace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trace}
+      POSTGRES_DB: ${POSTGRES_DB:-trace}
     ports:
       - "5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trace} -d ${POSTGRES_DB:-trace}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trace}:${POSTGRES_PASSWORD:-trace}@db:5432/${POSTGRES_DB:-trace}
+      TRACE_ALLOWED_ORIGINS: ${TRACE_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      TRACE_LOG_LEVEL: ${TRACE_LOG_LEVEL:-INFO}
+      TRACE_DETECTOR_WEIGHTS: ${TRACE_DETECTOR_WEIGHTS:-yolov8n.pt}
+      TRACE_DETECTOR_CONFIDENCE: ${TRACE_DETECTOR_CONFIDENCE:-0.25}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # FastAPI's own auto-served Swagger UI, reused as a readiness probe
+      # rather than inventing a dedicated /health route not otherwise
+      # needed -- no curl in python:3.11-slim, so this uses the stdlib.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  worker:
+    build: .
+    command: ["python", "scripts/persist_video.py"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trace}:${POSTGRES_PASSWORD:-trace}@db:5432/${POSTGRES_DB:-trace}
+      TRACE_LOG_LEVEL: ${TRACE_LOG_LEVEL:-INFO}
+      TRACE_DETECTOR_WEIGHTS: ${TRACE_DETECTOR_WEIGHTS:-yolov8n.pt}
+      TRACE_DETECTOR_CONFIDENCE: ${TRACE_DETECTOR_CONFIDENCE:-0.25}
+      TRACE_CAMERA_SOURCE: ${TRACE_CAMERA_SOURCE:-data/sample.mp4}
+      TRACE_CAMERA_ID: ${TRACE_CAMERA_ID:-demo}
+      TRACE_NUM_FRAMES: ${TRACE_NUM_FRAMES:-}
+    volumes:
+      # data/ is gitignored (real footage stays local, never in the image or
+      # git history -- see Section 2) -- this bind mount is how a locally
+      # provided video (e.g. data/sample.mp4) reaches the container without
+      # ever being baked into it. Empty/missing on a fresh clone is expected;
+      # see the README for how to provide your own.
+      - ./data:/app/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: ./dashboard
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
 
 volumes:
   db_data:
