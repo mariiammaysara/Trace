@@ -254,3 +254,28 @@ def list_events_for_camera(
     if end_time is not None:
         query = query.where(Event.timestamp <= end_time)
     return list(session.execute(query.order_by(Event.timestamp)).scalars())
+
+
+# --- read-only lookups added in Phase 11 for the Vision Agent's tools
+# (src/agent/tools.py) -- same "no raw ORM query outside the repository
+# layer" rule Phase 9's API additions followed. ---
+
+
+def get_zone(session: Session, camera: Camera, zone_id: str) -> Optional[Zone]:
+    return session.execute(select(Zone).where(Zone.camera_id == camera.id, Zone.zone_id == zone_id)).scalar_one_or_none()
+
+
+def get_line(session: Session, camera: Camera, line_id: str) -> Optional[Line]:
+    return session.execute(select(Line).where(Line.camera_id == camera.id, Line.line_id == line_id)).scalar_one_or_none()
+
+
+def list_events_for_zone(session: Session, zone: Zone) -> List[Event]:
+    return list(session.execute(select(Event).where(Event.zone_id == zone.id).order_by(Event.timestamp)).scalars())
+
+
+def list_events_for_line(session: Session, line: Line) -> List[Event]:
+    return list(session.execute(select(Event).where(Event.line_id == line.id).order_by(Event.timestamp)).scalars())
+
+
+def get_event(session: Session, id: int) -> Optional[Event]:  # noqa: A002 -- matches the REST resource id
+    return session.get(Event, id)

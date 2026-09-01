@@ -148,3 +148,21 @@ class AnalyticsSummary(BaseModel):
     traffic_volume: int
     event_frequency: Dict[str, int]
     per_class_stats: Dict[str, Dict[str, int]]
+
+
+class AgentQueryRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+
+
+class AgentToolCallRead(BaseModel):
+    """One tool call the agent made while answering -- returned for
+    transparency, so a caller can see exactly what grounded the answer."""
+
+    name: str
+    arguments: Dict[str, Any]
+    result: Dict[str, Any]
+
+
+class AgentQueryResponse(BaseModel):
+    answer: str
+    tool_calls: List[AgentToolCallRead]

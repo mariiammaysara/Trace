@@ -12,8 +12,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from agent.agent import AgentAnswer, ToolCallRecord
 from api.app import app
-from api.deps import get_db
+from api.deps import get_agent, get_db
 from database import repository
 from events.event import Event as PipelineEvent
 
@@ -313,6 +314,60 @@ def test_get_analytics_success(client, db_session):
 def test_get_analytics_invalid_query_param_type_fails_validation(client):
     response = client.get("/analytics", params={"start_time": "not-a-number"})
     assert response.status_code == 422
+
+
+# --- POST /agent/query ---
+
+
+def test_query_agent_success(client):
+    class FakeAgent:
+        def answer(self, session, question, **kwargs):
+            return AgentAnswer(
+                text="2 objects were tracked on camera 'demo'.",
+                tool_calls=[ToolCallRecord(name="get_camera_events", arguments={"camera_id": "demo"}, result={"count": 2})],
+            )
+
+    app.dependency_overrides[get_agent] = lambda: FakeAgent()
+    try:
+        response = client.post("/agent/query", json={"question": "How many objects were tracked on camera demo?"})
+    finally:
+        del app.dependency_overrides[get_agent]
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"] == "2 objects were tracked on camera 'demo'."
+    assert body["tool_calls"] == [{"name": "get_camera_events", "arguments": {"camera_id": "demo"}, "result": {"count": 2}}]
+
+
+def test_query_agent_missing_question_fails_validation(client):
+    # Overriding get_agent here too: FastAPI can resolve a route's
+    # dependencies (get_agent, which fails with 503 when no LLM is
+    # configured) before/independent of body validation, so this test would
+    # otherwise incorrectly depend on ambient ANTHROPIC_API_KEY state to
+    # observe the 422 it's actually testing for.
+    class FakeAgent:
+        def answer(self, session, question, **kwargs):
+            raise AssertionError("should never be called -- request body is invalid")
+
+    app.dependency_overrides[get_agent] = lambda: FakeAgent()
+    try:
+        response = client.post("/agent/query", json={})
+    finally:
+        del app.dependency_overrides[get_agent]
+
+    assert response.status_code == 422
+
+
+def test_query_agent_without_configured_llm_returns_503(client, monkeypatch):
+    # No dependency override here -- get_agent() runs for real, which calls
+    # build_default_llm_client(); this asserts the "no LLM configured" case
+    # is a clear 503, not a generic 500 or a silent fake answer.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    response = client.post("/agent/query", json={"question": "anything"})
+
+    assert response.status_code == 503
+    assert "ANTHROPIC_API_KEY" in response.json()["detail"]
 
 
 # --- 500 handling ---

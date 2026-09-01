@@ -810,7 +810,7 @@ A clean separation: **API layer** (routes, request/response shapes) → **servic
 - Error handling: convert internal exceptions (not-found, invalid zone geometry, database errors) into meaningful HTTP status codes and structured error responses, not raw stack traces.
 - **How TRACE does each of the three required cases**: 422 for a malformed body/query param is automatic (Pydantic + FastAPI, including a custom `field_validator` for domain rules like "a zone needs ≥3 points" or "a line's start/end must differ" — a plain `ValueError` inside a validator becomes a 422 with no extra code). 404 is raised explicitly once a repository lookup returns `None` (`api/common.py::get_camera_or_404`, and inline in `objects.py` for an unknown trajectory id) — never silently returning an empty/default value. 500 is caught by one global handler (`app.exception_handler(Exception)` in `api/app.py`) that logs the real exception server-side and always returns the same clean `{"detail": "internal server error"}` body — verified by test (`tests/test_api.py::test_unexpected_error_returns_clean_500_not_a_stack_trace`, which monkeypatches a repository function to raise and asserts the response body never contains the exception's class name or a traceback).
 
-### The actual TRACE API `[IMPLEMENTED — all seven Section 8/9 CRUD/query endpoints; agent/alerts are [PLANNED], Phases 11–12]`
+### The actual TRACE API `[IMPLEMENTED — all seven Section 8/9 CRUD/query endpoints plus POST /agent/query (Phase 11); alerts is [PLANNED], Phase 12]`
 
 | Endpoint | Purpose | Input | Output | Route function |
 |---|---|---|---|---|
@@ -821,7 +821,7 @@ A clean separation: **API layer** (routes, request/response shapes) → **servic
 | `GET /analytics` | Aggregated stats (Section 11) | query `camera_id?`/`start_time?`/`end_time?` | `AnalyticsSummary` (bundles 7 of Section 11's 8 functions) | `api/routers/analytics.py::get_analytics` |
 | `POST /zones` | Configure a polygon zone on a camera | `ZoneCreate` (camera_id, zone_id, polygon — validated ≥3 points) | `ZoneRead` | `api/routers/zones.py::create_zone` |
 | `POST /lines` | Configure a virtual line on a camera | `LineCreate` (camera_id, line_id, start, end — validated start≠end) | `LineRead` | `api/routers/lines.py::create_line` |
-| `POST /agent/query` | Ask the Vision Agent a natural-language question | question text, optional context | agent's grounded answer | `[PLANNED]` — Phase 11, depends on the not-yet-built Vision Agent |
+| `POST /agent/query` | Ask the Vision Agent a natural-language question | `AgentQueryRequest` (question) | `AgentQueryResponse` (answer, tool_calls) | `api/routers/agent.py::query_agent` — `[IMPLEMENTED]`, Section 12; returns `503` if no LLM API key is configured |
 | `POST /alerts` | Configure or trigger an alert rule | rule definition | alert/rule record | `[PLANNED]` — Phase 12, depends on a not-yet-built alert-rule system |
 
 **Two deliberate path-parameter decisions, since the table above only wrote `{id}` generically:**
@@ -836,7 +836,7 @@ A clean separation: **API layer** (routes, request/response shapes) → **servic
 - `src/api/deps.py` — `get_db()`, one SQLAlchemy session per request (overridden in tests to reuse the same rolled-back-transaction session as the repository/analytics tests).
 - `src/api/schemas.py` — every Pydantic request/response model, including the two custom validators described above.
 - `src/api/common.py` — `get_camera_or_404`, the one small piece of shared "look up or fail" logic every camera-scoped route needs.
-- `src/api/routers/` — `cameras.py`, `videos.py`, `zones.py`, `lines.py`, `objects.py`, `analytics.py`, one module per resource.
+- `src/api/routers/` — `cameras.py`, `videos.py`, `zones.py`, `lines.py`, `objects.py`, `analytics.py`, `agent.py` (Phase 11, Section 12), one module per resource.
 - Tests: `tests/test_api.py`, using FastAPI's `TestClient` — one success and one failure case per endpoint (15 tests total), plus the 500-handler test. **Real finding while writing these, not a framework bug**: Starlette's `TestClient` re-raises the original exception for debuggability by default (`raise_server_exceptions=True`) even when a registered exception handler already produced a real response — the 500 test needed `TestClient(app, raise_server_exceptions=False)` to actually observe the clean response instead of the raw exception. Also verified against a real running `uvicorn` server with `curl` (not just `TestClient`), including the 404 and 422 paths, since this environment's FastAPI/Starlette versions turned out newer than expected and `TestClient`-only verification felt worth double-checking.
 
 ---
@@ -872,7 +872,81 @@ Every function in this section is a read-only SQL query against the tables Secti
 - Every function takes a SQLAlchemy `Session` as its first argument and keyword-only filters (`camera_id`, `class_name`, `zone_id`, `line_id`, `start_time`, `end_time` where relevant) — no hidden global state, no ORM session management inside the analytics layer itself.
 - `tests/test_analytics.py` — seeds a fully deterministic scenario (2 objects, 7 events, one completed 3.0s zone visit, 3 line crossings from 2 distinct objects) via the real repository layer, then asserts every one of the 8 functions against the exact expected number computed by hand from that scenario — not just "it returns something," a specific known value per function.
 
-> **Note:** Sections 12–18, 20, and 21 (listed in the Table of Contents) have not been written yet — only Sections 0–11 exist below this point, plus Section 19 (Implementation Map), added here ahead of the sections it numerically follows so completed work has somewhere to be recorded. Fill in 12–18/20/21 as those phases are planned; renumber/reorder at that point if needed.
+> **Note:** Sections 13–18, 20, and 21 (listed in the Table of Contents) have not been written yet — only Sections 0–12 exist below this point, plus Section 19 (Implementation Map), added here ahead of the sections it numerically follows so completed work has somewhere to be recorded. Fill in 13–18/20/21 as those phases are planned; renumber/reorder at that point if needed.
+
+## 12. Vision Agent
+
+*Added in Phase 11. This section did not exist before this phase — there was no prior draft to update.*
+
+### What the Vision Agent is, and isn't
+
+The agent is a natural-language interface over TRACE's stored data, not a second computer-vision system: it never looks at a frame or a video file directly. Its only access to the world is a fixed set of tools (below), each a thin, deterministic wrapper around the real Phase 8 repository / Section 11 analytics layer. The LLM's job is exactly two things: (1) decide which tool(s) answer the user's question, and (2) compose a final answer using only what those tools returned. It never computes an answer itself from first principles — the same "the LLM reasons over structured data this layer produces, it never produces the data itself" rule Section 7's event engine follows.
+
+**Hard grounding rule**: the system prompt (`src/agent/prompts.py`) explicitly instructs the model to never state a fact not returned by a tool call this conversation, and to say plainly "no matching events were found" rather than guess when a tool returns nothing. This is a prompt-level instruction for the real LLM path; the test suite enforces the same rule mechanically (see below).
+
+### The seven tools `[IMPLEMENTED]`
+
+| Tool | Answers | Backed by |
+|---|---|---|
+| `get_camera_events(camera_id, event_type?, start_time?, end_time?)` | What events happened on this camera (optionally filtered)? | `repository.list_events_for_camera` |
+| `get_object_stats(object_id)` | Identity, lifespan, and full event history for one tracked object | `repository.get_object` + `get_events_for_object` + `get_track_points_for_object` |
+| `get_zone_events(camera_id, zone_id)` | What `ZONE_ENTERED`/`ZONE_EXITED` events happened in this zone? | `repository.get_zone` + `list_events_for_zone` (new) |
+| `get_line_crossings(camera_id, line_id)` | What `LINE_CROSSED` events happened on this line? | `repository.get_line` + `list_events_for_line` (new) |
+| `get_traffic_stats(camera_id, start_time?, end_time?)` | `traffic_volume` and `line_crossing_count` for this camera (Section 11) | `analytics.queries.traffic_volume` + `line_crossing_count` |
+| `get_event(event_id)` | Full detail for one specific event by its database id | `repository.get_event` (new) |
+| `get_video_segment(camera_id, timestamp, window_seconds?)` | The video and a `[start_time, end_time]` window around a moment | `repository.list_videos` — the tool version of the dashboard's Event Investigation click-to-seek (Section 0/10.3) |
+
+Every tool returns `{"error": "..."}` for an unresolvable id (unknown camera/zone/line/object/event) instead of raising — a bad tool call becomes something the agent loop can see and recover from, not a crash. `execute_tool()` (`src/agent/tools.py`) also catches an unknown tool name or malformed arguments the same way, in case the model hallucinates a tool call that doesn't match the real registry.
+
+**Units note**: `estimated_speed` values passed through from event metadata (Section 6) are meters/second, computed from the camera's calibrated homography. The system prompt tells the model this explicitly and instructs it to convert (1 m/s = 3.6 km/h) when a question uses km/h/mph, while still calling it "estimated speed" — never "measured speed" (Section 6's naming rule, carried through to the agent).
+
+### The agent loop `[IMPLEMENTED]`
+
+```text
+user question
+    -> LLMSession.start(question)                    (agent/llm.py)
+    -> ModelTurn: tool_calls, or a final text answer
+        -> execute each tool_call against the real DB  (agent/tools.py)
+        -> LLMSession.submit_tool_results(results)
+    -> repeat until the model returns text, or DEFAULT_MAX_ITERATIONS (6) is hit
+```
+
+`VisionAgent.answer()` (`src/agent/agent.py`) is provider-agnostic: it only depends on the `LLMClient`/`LLMSession` protocol (`src/agent/llm.py`), never on a specific provider. The real implementation, `AnthropicLLMClient`, uses the Anthropic Messages API's tool-use protocol (multi-turn: `tool_use` content blocks → real tool execution → `tool_result` content blocks → repeat until `end_turn`).
+
+**A real, load-bearing limitation, stated plainly rather than hidden**: this environment has no configured LLM API key (checked at build time — only an empty placeholder `GEMINI_API_KEY` exists, no `ANTHROPIC_API_KEY`), so `AnthropicLLMClient` has never actually been exercised by a live call in this repository. It's implemented against the real, verified Anthropic SDK protocol (request/response shapes checked directly against the installed `anthropic` package, not guessed) so it's correct and usable the moment a real key is provided — `POST /agent/query` returns a clear `503` naming exactly this when no key is set (`api/deps.py::get_agent`), rather than silently answering with something else. The test suite instead runs the real orchestration loop, real tool execution, and a real seeded database against `GroundedFakeLLMSession` (`tests/test_agent.py`) — a test double implementing the exact same `LLMClient`/`LLMSession` protocol, which parses each test's question with a regex (a real model would do this by genuine understanding) to pick a tool, then composes its answer strictly from what that real tool call actually returned. This validates the entire pipeline except the model's own judgment, which cannot be tested without a live paid API call.
+
+### Real worked examples, from actual test runs against seeded data `[IMPLEMENTED]`
+
+Captured verbatim by running the real `VisionAgent.answer()` loop (with `GroundedFakeLLMSession`) against real seeded rows in `trace_test` — not written by hand:
+
+> **Q:** Did any vehicle on camera 'study-guide-demo-1' exceed 80 km/h today?
+> **A:** Yes -- object #305 (car) reached an estimated 90.0 km/h on camera 'study-guide-demo-1', exceeding 80 km/h.
+> *(Seeded: one `OVERSPEED` event with `estimated_speed=25.0` m/s = 90.0 km/h — the tool called was `get_camera_events(camera_id='study-guide-demo-1', event_type='OVERSPEED')`.)*
+
+> **Q:** Did any vehicle on camera 'study-guide-demo-2' exceed 80 km/h today?
+> **A:** No, I found no events where a vehicle exceeded 80 km/h.
+> *(Seeded: a camera with zero events — the "don't fabricate" case, `tests/test_agent.py::test_agent_reports_no_matching_events_rather_than_fabricating_one`.)*
+
+> **Q:** What zone events happened in zone 'restricted' on camera 'study-guide-demo-3'?
+> **A:** 1 zone event(s) found: ZONE_ENTERED by object #306 at 5.0s.
+> *(Seeded: one `ZONE_ENTERED` event on a real configured zone.)*
+
+The object ids (305, 306) are real database primary keys from a shared Postgres sequence, not `1`/`2` — a live illustration of Section 9's documented distinction between `TrackedObject.id` (global, what these tools/answers use) and the Tracker's own per-camera `object_id` (Section 3, restarts from 1 per run).
+
+### `POST /agent/query` `[IMPLEMENTED]`
+
+Wired in `src/api/routers/agent.py`: `{"question": str}` in, `{"answer": str, "tool_calls": [...]}` out (`tool_calls` included for transparency/debugging — exactly what grounded the answer). `api/deps.py::get_agent` constructs a fresh `VisionAgent` per request and turns `LLMNotConfiguredError` into a `503`, not the generic `500` handler. **A real, tested quirk**: this FastAPI version resolves a route's non-body dependencies before/independent of request-body validation, so a malformed request to `/agent/query` returns `503` (from `get_agent`) instead of `422` whenever no LLM is configured — confirmed both via `TestClient` and a real `curl` request against a running `uvicorn` instance. `tests/test_api.py`'s validation test accounts for this by overriding `get_agent` with a fake so body validation can be tested in isolation from LLM configuration.
+
+### Where this is implemented `[IMPLEMENTED]`
+
+- `src/agent/tools.py` — the seven tools, `ToolSpec`/`TOOL_SPECS`, `execute_tool()`.
+- `src/agent/prompts.py` — `SYSTEM_PROMPT`.
+- `src/agent/llm.py` — `LLMClient`/`LLMSession` protocol, `AnthropicLLMClient`, `LLMNotConfiguredError`, `build_default_llm_client()`.
+- `src/agent/agent.py` — `VisionAgent`, `AgentAnswer`, `ToolCallRecord`.
+- `src/database/repository.py` — additive: `get_zone`, `get_line`, `list_events_for_zone`, `list_events_for_line`, `get_event`.
+- `src/api/routers/agent.py`, `src/api/deps.py::get_agent`, `src/api/schemas.py`'s `AgentQueryRequest`/`AgentQueryResponse`/`AgentToolCallRead`.
+- `pyproject.toml`'s `agent` optional-dependency group (`anthropic>=0.40`).
+- Tests: `tests/test_agent_tools.py` (17 tests — one per tool's argument-building and error-path behavior, repository/analytics calls mocked), `tests/test_agent.py` (5 tests — the real orchestration loop against real seeded Postgres data, including the 80 km/h known-answer scenario and the no-matching-events scenario), `tests/test_api.py` (3 new tests — success, validation, and the 503-when-unconfigured path). 189 tests total in `tests/`, all passing.
 
 ## 19. Implementation Map
 
@@ -967,14 +1041,26 @@ Every function in this section is a read-only SQL query against the tables Secti
 | Event Investigation view — filterable table, click-to-seek (Section 0, added in Phase 10.3) | `[IMPLEMENTED]` | `dashboard/src/components/EventsView.tsx` | Camera `Select`; event-type `Select` + start/end-time `Input`s filtering `GET /cameras/{id}/events` server-side; shadcn `Table` of results; clicking (or Enter/Space on a keyboard-focused) row sets a `seekRequest` that jumps the shared `VideoPlayer` to that event's timestamp — the video/overlay always reflect the camera's full unfiltered event list regardless of the table's active filter |
 | Event-type badge severity mapping for investigation (Section 7, added in Phase 10.3) | `[IMPLEMENTED]` | `dashboard/src/lib/eventSeverity.ts`, `dashboard/src/components/EventBadge.tsx` | `classifyEventSeverity(eventType)` — `OVERSPEED`/`ZONE_ENTERED`/`SUDDEN_STOP` → `danger`, `LINE_CROSSED`/`STOPPED`/`LOITERING` → `warning`, `OBJECT_APPEARED`/`OBJECT_DISAPPEARED`/`ZONE_EXITED` → `info`; unlike the chart-color mapping (`eventClassification.ts`), every event type resolves to a semantic color here, never brand — documented with rationale per type in `dashboard/DESIGN_SYSTEM.md`'s "Event badges" section |
 | Row interaction states — hover, selected, keyboard focus (Section 0, added in Phase 10.3) | `[IMPLEMENTED]` | `dashboard/src/components/EventsView.tsx`, `dashboard/src/components/ui/table.tsx` (shadcn) | Rows are `tabIndex={0}` + `role="button"` with `onKeyDown` handling Enter/Space (not just click); `data-state="selected"` drives shadcn `TableRow`'s built-in `data-[state=selected]:bg-muted`; a custom `focus-visible:outline-accent` ring replaces the browser's default (blue) focus ring so it stays on-token |
-| Events view test coverage (Section 16, added in Phase 10.3) | `[IMPLEMENTED]` | `dashboard/src/lib/eventSeverity.test.ts`, `dashboard/src/components/EventBadge.test.tsx`, `dashboard/src/components/EventsView.test.tsx` | 13 new tests (43 total in `dashboard/`) — real fetched events render in the table, badge colors match the documented mapping (`ZONE_ENTERED` → `text-danger`, `OBJECT_APPEARED` → `text-info`), clicking a row moves the player's displayed time to that event's exact timestamp, and event-type filtering calls the API with the right query param |
+| Events view test coverage (Section 16, added in Phase 10.3) | `[IMPLEMENTED]` | `dashboard/src/lib/eventSeverity.test.ts`, `dashboard/src/components/EventBadge.test.tsx`, `dashboard/src/components/EventsView.test.tsx` | 13 new tests — real fetched events render in the table, badge colors match the documented mapping (`ZONE_ENTERED` → `text-danger`, `OBJECT_APPEARED` → `text-info`), clicking a row moves the player's displayed time to that event's exact timestamp, and event-type filtering calls the API with the right query param |
+| Cross-view event-color consistency check + fix (post-Phase 10.3) | `[IMPLEMENTED]` | `dashboard/src/lib/eventColorConsistency.test.ts` | Comparing `overlay.ts`, `eventClassification.ts`, and `eventSeverity.ts` directly found a real inconsistency (`LINE_CROSSED` was `warning` in the badge mapping but `danger` in the other two views) — fixed by moving it to `danger` in `eventSeverity.ts`; this test now cross-checks every event type across all three modules so a future edit to one can't silently drift from the others. 10 tests; dashboard total is 53 |
+
+| Zone/line/event point lookups for the agent's tools (Section 9, added in Phase 11) | `[IMPLEMENTED]` | `src/database/repository.py` | `get_zone(camera, zone_id)`, `get_line(camera, line_id)`, `list_events_for_zone(zone)`, `list_events_for_line(line)`, `get_event(id)` — all additive, same "no raw ORM query outside the repository layer" rule as every prior phase's additions |
+| Vision Agent tools — all seven, each backed by real repository/analytics calls (Section 12, added in Phase 11) | `[IMPLEMENTED]` | `src/agent/tools.py` | `get_camera_events`, `get_object_stats`, `get_zone_events`, `get_line_crossings`, `get_traffic_stats`, `get_event`, `get_video_segment`, `ToolSpec`/`TOOL_SPECS`, `execute_tool()` |
+| Vision Agent system prompt — the grounding rule (Section 12, added in Phase 11) | `[IMPLEMENTED]` | `src/agent/prompts.py` | `SYSTEM_PROMPT` — explicitly instructs the model to never state a fact not returned by a tool call, and to say "no matching events found" rather than guess |
+| LLM client boundary + real Anthropic tool-use integration (Section 12, added in Phase 11) | `[IMPLEMENTED — untested by live call, see Section 12's caveat]` | `src/agent/llm.py` | `LLMClient`/`LLMSession` protocol, `AnthropicLLMClient`, `LLMNotConfiguredError`, `build_default_llm_client()` (reads `ANTHROPIC_API_KEY`) |
+| Agent orchestration loop (Section 12, added in Phase 11) | `[IMPLEMENTED]` | `src/agent/agent.py` | `VisionAgent.answer(session, question)` — provider-agnostic tool-call loop, `AgentAnswer`, `ToolCallRecord` |
+| `POST /agent/query` (Section 10, Section 12, added in Phase 11) | `[IMPLEMENTED]` | `src/api/routers/agent.py`, `src/api/deps.py::get_agent`, `src/api/schemas.py` | `AgentQueryRequest`/`AgentQueryResponse`/`AgentToolCallRead`; `get_agent()` returns a clean `503` (not the generic `500`) when no LLM API key is configured |
+| Vision Agent test coverage (Section 12, Section 16, added in Phase 11) | `[IMPLEMENTED]` | `tests/test_agent_tools.py`, `tests/test_agent.py`, `tests/test_api.py` | 17 mocked per-tool unit tests + 5 real-seeded-database orchestration tests (including the "did any vehicle exceed 80 km/h" known-answer case and a no-matching-events case) + 3 API-layer tests (success, validation, 503-when-unconfigured); 189 tests total in `tests/`, all passing |
 
 ### What I should know
 - [ ] I can explain why the API sits between the pipeline/database and every consumer (dashboard, agent).
 - [ ] I can explain what Pydantic validation buys you that plain dict-based JSON handling doesn't.
 - [ ] I can explain the API → service → repository layering and why route handlers shouldn't contain SQL.
+- [ ] I can explain why the Vision Agent's tools return real data and never let the LLM compute the answer itself.
+- [ ] I can explain what "grounding" means here and how it's enforced both in the system prompt and in how the agent loop is tested.
 
 ### Questions to test myself
 1. Why should `POST /zones` validate polygon geometry at the API boundary rather than deep inside the event engine?
 2. What's the risk of skipping the service layer and calling the database directly from route handlers?
 3. Why does the agent talk to the same API/database as the dashboard, instead of having its own private data path?
+4. Why does `tests/test_agent.py` use a scripted `GroundedFakeLLMSession` instead of calling a real LLM, and what does that test suite actually prove vs. not prove about the real `AnthropicLLMClient` path?
