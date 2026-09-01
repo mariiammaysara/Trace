@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛰️ TRACE
+#  TRACE
 ### Real-Time Video Intelligence & Multi-Object Tracking Platform
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
