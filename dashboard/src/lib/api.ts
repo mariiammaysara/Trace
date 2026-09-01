@@ -115,8 +115,26 @@ export function getObjectTrajectory(objectId: number): Promise<Trajectory> {
   return apiGet<Trajectory>(`/objects/${objectId}/trajectory`)
 }
 
-export function listCameraEvents(cameraId: string): Promise<TraceEvent[]> {
-  return apiGet<TraceEvent[]>(`/cameras/${encodeURIComponent(cameraId)}/events`)
+export interface EventFilters {
+  eventType?: string
+  startTime?: number
+  endTime?: number
+}
+
+/**
+ * GET /cameras/{camera_id}/events already supports event_type/start_time/
+ * end_time server-side filtering (src/api/routers/cameras.py) -- Phase 10.3's
+ * Event Investigation view filters through this, not client-side, since the
+ * backend is the source of truth and can scale past what's fetched in one
+ * page.
+ */
+export function listCameraEvents(cameraId: string, filters: EventFilters = {}): Promise<TraceEvent[]> {
+  const params = new URLSearchParams()
+  if (filters.eventType) params.set('event_type', filters.eventType)
+  if (filters.startTime !== undefined) params.set('start_time', String(filters.startTime))
+  if (filters.endTime !== undefined) params.set('end_time', String(filters.endTime))
+  const query = params.toString() ? `?${params.toString()}` : ''
+  return apiGet<TraceEvent[]>(`/cameras/${encodeURIComponent(cameraId)}/events${query}`)
 }
 
 export function listCameraZones(cameraId: string): Promise<Zone[]> {

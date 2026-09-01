@@ -2,9 +2,10 @@
  * App shell: Header + Sidebar, built from TRACE's design tokens
  * (theme/tokens.css via the CSS variable mapping in index.css), not
  * hardcoded colors. Content area switches between the Live/Video view
- * (Phase 10.1) and the Analytics view (Phase 10.2) via plain local state --
- * no router dependency, since the dashboard only has these two real views
- * so far ("Cameras"/"Events" nav items remain inert placeholders).
+ * (Phase 10.1), the Analytics view (Phase 10.2), and the Events
+ * investigation view (Phase 10.3) via plain local state -- no router
+ * dependency ("Cameras" remains the one inert placeholder nav item, since no
+ * dedicated camera-management view has been built).
  *
  * The header's "TRACE" mark is a TEXT placeholder, not the real logo/
  * wordmark asset -- no logo file has been provided yet (checked the whole
@@ -15,8 +16,9 @@
 import { useState } from 'react'
 import { LiveView } from '@/components/LiveView'
 import { AnalyticsView } from '@/components/AnalyticsView'
+import { EventsView } from '@/components/EventsView'
 
-type ActiveView = 'dashboard' | 'analytics'
+type ActiveView = 'dashboard' | 'events' | 'analytics'
 
 function Wordmark() {
   return (
@@ -41,7 +43,7 @@ function Sidebar({ activeView, onNavigate }: SidebarProps) {
   const navItems: { label: string; view: ActiveView | null }[] = [
     { label: 'Dashboard', view: 'dashboard' },
     { label: 'Cameras', view: null },
-    { label: 'Events', view: null },
+    { label: 'Events', view: 'events' },
     { label: 'Analytics', view: 'analytics' },
   ]
 
@@ -90,7 +92,9 @@ function App() {
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-auto p-6">
-          {activeView === 'dashboard' ? <LiveView /> : <AnalyticsView />}
+          {activeView === 'dashboard' && <LiveView />}
+          {activeView === 'events' && <EventsView />}
+          {activeView === 'analytics' && <AnalyticsView />}
         </main>
       </div>
     </div>

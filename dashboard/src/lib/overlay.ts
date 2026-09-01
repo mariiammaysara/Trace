@@ -13,10 +13,10 @@ export type ViolationState = 'danger' | 'warning' | 'normal'
  * entry, a speed/stop violation, a line crossing) is exactly what
  * --color-danger exists for, per the design system.
  */
-const DANGER_EVENT_TYPES = new Set(['LINE_CROSSED', 'OVERSPEED', 'SUDDEN_STOP'])
+export const DANGER_EVENT_TYPES = new Set(['LINE_CROSSED', 'OVERSPEED', 'SUDDEN_STOP'])
 
 /** Notable but less severe than a violation -- --color-warning. */
-const WARNING_EVENT_TYPES = new Set(['STOPPED', 'LOITERING'])
+export const WARNING_EVENT_TYPES = new Set(['STOPPED', 'LOITERING'])
 
 /**
  * How long an instantaneous event (LINE_CROSSED, OVERSPEED, SUDDEN_STOP,

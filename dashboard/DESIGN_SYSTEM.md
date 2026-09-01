@@ -49,3 +49,43 @@ via `src/index.css`'s `--card`/`--card-foreground` mapping — see `StatCard`
 in `src/components/StatCard.tsx`). A card representing a violation metric
 (e.g. zone violations) additionally gets a subtle `ring-danger/40` and its
 value in `text-danger`, so it's identifiable without reading the label.
+
+## Event badges (Event Investigation, Phase 10.3)
+
+A badge is one of `tokens.css`'s explicitly-reserved semantic-color
+surfaces ("event badges, alert toasts, status dots, violation chart
+series"), so unlike the chart convention above — where only violation-class
+data gets a semantic color and everything else stays brand — **every**
+event-type badge resolves to one of TRACE's three semantic states, never a
+brand color. Implemented in `src/lib/eventSeverity.ts`
+(`classifyEventSeverity`) and rendered by `src/components/EventBadge.tsx`.
+
+| Event type | Severity | Why |
+|---|---|---|
+| `OVERSPEED` | `danger` | A speed violation — Section 11's own "violation" framing. |
+| `ZONE_ENTERED` | `danger` | Entering a configured zone reads as a violation when that zone is restricted — `zone_violation_count` (Section 11) is literally `COUNT(ZONE_ENTERED)`. |
+| `SUDDEN_STOP` | `danger` | An anomalous, potentially hazardous motion event (Section 4/7). |
+| `LINE_CROSSED` | `danger` | Kept in the danger tier here to stay **consistent with the other two views**, not because badges alone demand it: the Live overlay's flash set (`overlay.ts`'s `DANGER_EVENT_TYPES`) and the Analytics chart's violation set (`eventClassification.ts`'s `VIOLATION_EVENT_TYPES`) both already treat `LINE_CROSSED` as danger-tier. An earlier draft of this table put it at `warning` — a real cross-view inconsistency, caught and fixed; see `src/lib/eventColorConsistency.test.ts`, which now asserts all three mappings agree. |
+| `STOPPED` | `warning` | Notable but not urgent on its own. |
+| `LOITERING` | `warning` | Section 0's own "suspicious behavior" framing — notable, not an automatic violation. |
+| `OBJECT_APPEARED` | `info` | Pure lifecycle bookkeeping. |
+| `OBJECT_DISAPPEARED` | `info` | Pure lifecycle bookkeeping. |
+| `ZONE_EXITED` | `info` | The closing half of a zone visit already flagged on entry — not itself a new violation. |
+
+Any event type outside this fixed list (there shouldn't be one — Section 7
+defines exactly these nine) falls back to `info` rather than silently
+rendering unstyled.
+
+Badge classes: `border-{severity}/30 bg-{severity}/10 text-{severity}` on
+top of shadcn's `Badge` `variant="outline"`.
+
+**Cross-view consistency**: the badge severity tier (danger/warning/"non-severe")
+for every event type must match the Live overlay (`overlay.ts`) and the
+Analytics chart (`eventClassification.ts`). The one place the *literal color*
+is allowed to differ is the non-severe bucket — badges render it as
+`--color-info` (a badge is a reserved semantic surface), while the overlay
+and chart render it as brand `accent` (their default/non-violation series
+color) — but the tier itself (not danger, not warning) must still agree.
+`src/lib/eventColorConsistency.test.ts` checks this directly across all
+three modules so a future change to one can't silently drift from the
+others.
