@@ -1,13 +1,21 @@
-# TRACE — Real-Time Video Intelligence & Multi-Object Tracking Platform
+<div align="center">
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-19.0-61DAFB.svg?logo=react&logoColor=black)](https://react.dev/)
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/Tests-277%20Passed-success.svg)]()
+# 🛰️ TRACE
+### Real-Time Video Intelligence & Multi-Object Tracking Platform
 
-> **TRACE** transforms unstructured surveillance and video feeds into structured, queryable spatial intelligence. It couples high-throughput edge computer vision (YOLOv8 + ByteTrack) with metric planar homography, a deterministic spatio-temporal rule engine, PostgreSQL time-series persistence, a real-time operator dashboard, and an LLM-powered Vision Agent capable of grounded reasoning over historical video telemetry.
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-19.0-61DAFB.svg?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![Tests](https://img.shields.io/badge/Tests-277%20Passed-success.svg?style=for-the-badge)]()
+
+<p align="center">
+  <b>Transforming unstructured surveillance and video feeds into queryable, real-time spatial intelligence.</b><br>
+  Edge Computer Vision (YOLOv8 + ByteTrack) • Metric Planar Homography • Spatio-Temporal Event Engine • Tool-Using LLM Vision Agent
+</p>
+
+</div>
 
 ---
 
