@@ -1,0 +1,17 @@
+baseline:  yolov8n.pt
+finetuned: C:\Users\ahmed\Desktop\Trace\models\yolov8n_trace_finetuned.pt
+dataset:   C:\Users\ahmed\Desktop\Trace\training\dataset.yaml
+
+class        model       images  instances       P       R   mAP50  mAP50-95
+person       pretrained      14         58   0.723   0.707   0.744     0.497
+person       finetuned       14         58   0.916   0.566   0.747     0.508
+car          pretrained       5         19   0.461   0.316   0.406     0.212
+car          finetuned        5         19   0.842   0.281   0.405     0.239
+motorcycle   pretrained       2          3   1.000   0.973   0.995     0.830
+motorcycle   finetuned        2          3   1.000   0.920   0.995     0.777
+bus          pretrained       1          1   0.632   1.000   0.995     0.895
+bus          finetuned        1          1   0.826   1.000   0.995     0.895
+truck        pretrained       3          4   0.814   0.500   0.552     0.440
+truck        finetuned        3          4   1.000   0.370   0.549     0.414
+bicycle      pretrained       1          1   0.521   1.000   0.995     0.895
+bicycle      finetuned        1          1   0.657   1.000   0.995     0.895

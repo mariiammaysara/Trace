@@ -12,7 +12,7 @@ from typing import List, Optional, Sequence, Tuple
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from database.models import Camera, Event, Line, TrackedObject, TrackPoint, Video, Zone
+from database.models import Alert, Camera, Event, Line, PendingAction, TrackedObject, TrackPoint, Video, Zone
 from events.event import Event as PipelineEvent
 
 
@@ -171,7 +171,25 @@ def add_event_from_pipeline(session: Session, camera: Camera, event: PipelineEve
             select(Line).where(Line.camera_id == camera.id, Line.line_id == line_id)
         ).scalar_one_or_none()
 
-    return add_event(session, camera, tracked_object, event, zone=zone, line=line)
+    row = add_event(session, camera, tracked_object, event, zone=zone, line=line)
+
+    # Section 13's real-time alerting: synchronous, deterministic, no LLM/
+    # agent involved -- matches Section 7's event engine being pure/
+    # rule-based. flush() first so row.id exists for the Alert's event_id FK.
+    from alerts.rules import should_alert
+
+    if should_alert(event.event_type):
+        session.flush()
+        create_alert(
+            session,
+            camera,
+            event_type=event.event_type,
+            message=f"{event.event_type} detected for object {event.object_id} on camera {camera.camera_id!r}",
+            channel="dashboard",
+            event=row,
+        )
+
+    return row
 
 
 def get_events_for_object(session: Session, tracked_object: TrackedObject) -> List[Event]:
@@ -279,3 +297,46 @@ def list_events_for_line(session: Session, line: Line) -> List[Event]:
 
 def get_event(session: Session, id: int) -> Optional[Event]:  # noqa: A002 -- matches the REST resource id
     return session.get(Event, id)
+
+
+# --- Section 13: alerts + the agent's propose/approve gate (Phase 12) ---
+
+
+def create_alert(
+    session: Session,
+    camera: Camera,
+    *,
+    event_type: str,
+    message: str,
+    channel: str = "dashboard",
+    event: Optional[Event] = None,
+) -> Alert:
+    alert = Alert(
+        camera_id=camera.id,
+        event_id=event.id if event is not None else None,
+        event_type=event_type,
+        message=message,
+        channel=channel,
+    )
+    session.add(alert)
+    session.flush()
+    return alert
+
+
+def list_alerts_for_camera(session: Session, camera: Camera) -> List[Alert]:
+    return list(session.execute(select(Alert).where(Alert.camera_id == camera.id).order_by(Alert.created_at)).scalars())
+
+
+def get_alert(session: Session, id: int) -> Optional[Alert]:  # noqa: A002 -- matches the REST resource id
+    return session.get(Alert, id)
+
+
+def create_pending_action(session: Session, action_type: str, parameters: dict, summary: str) -> PendingAction:
+    action = PendingAction(action_type=action_type, parameters=parameters, summary=summary, status="pending")
+    session.add(action)
+    session.flush()
+    return action
+
+
+def get_pending_action(session: Session, id: int) -> Optional[PendingAction]:  # noqa: A002 -- matches the REST resource id
+    return session.get(PendingAction, id)

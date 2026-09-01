@@ -1,9 +1,7 @@
 """TRACE's FastAPI app: POST /videos, POST /cameras, GET /cameras/{camera_id}/events,
 GET /objects/{id}/trajectory, GET /analytics, POST /zones, POST /lines,
-POST /agent/query.
-
-POST /alerts is `[PLANNED]` -- Phase 12, not this phase (Section 10's table
-lists it, but it depends on a not-yet-built alert-rule system).
+POST /agent/query, POST /alerts, GET /cameras/{camera_id}/alerts,
+POST /agent/actions/{id}/approve, GET /agent/actions/{id}.
 
 Error handling:
 - 422 for a malformed request body -- Pydantic validation, automatic, before
@@ -25,7 +23,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routers import agent, analytics, cameras, lines, objects, videos, zones
+from api.routers import agent, alerts, analytics, cameras, lines, objects, videos, zones
 
 logger = logging.getLogger("trace.api")
 
@@ -54,6 +52,7 @@ app.include_router(lines.router)
 app.include_router(objects.router)
 app.include_router(analytics.router)
 app.include_router(agent.router)
+app.include_router(alerts.router)
 
 
 @app.exception_handler(Exception)

@@ -166,3 +166,42 @@ class AgentToolCallRead(BaseModel):
 class AgentQueryResponse(BaseModel):
     answer: str
     tool_calls: List[AgentToolCallRead]
+
+
+class AlertCreate(BaseModel):
+    """Direct alert creation -- Section 10/13's POST /alerts. Bypasses the
+    agent's propose/approve gate entirely (that gate exists for the LLM's
+    own autonomous tool-calling, Section 13; a direct API call is already a
+    real human/system action, same as POST /zones or POST /lines)."""
+
+    camera_id: str = Field(..., min_length=1)
+    event_type: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1)
+    channel: str = "dashboard"
+
+
+class AlertRead(BaseModel):
+    id: int
+    camera_id: str
+    event_id: Optional[int] = None
+    event_type: str
+    message: str
+    channel: str
+    created_at: dt.datetime
+
+
+class PendingActionRead(BaseModel):
+    """A proposed-but-not-yet-approved (or already-executed) agent action --
+    Section 13's real, code-level approval gate. GET so a caller/dashboard
+    can review a proposal before deciding whether to approve it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    action_type: str
+    parameters: Dict[str, Any]
+    summary: str
+    status: str
+    result: Optional[Dict[str, Any]] = None
+    created_at: dt.datetime
+    executed_at: Optional[dt.datetime] = None

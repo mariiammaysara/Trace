@@ -26,6 +26,13 @@ from typing import Any, Callable, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from agent.actions import (
+    propose_configure_line,
+    propose_configure_zone,
+    propose_create_alert,
+    propose_generate_report,
+    propose_send_notification,
+)
 from analytics import queries as analytics_queries
 from database import repository
 from database.models import Event
@@ -273,6 +280,104 @@ TOOL_SPECS: List[ToolSpec] = [
             "required": ["camera_id", "timestamp"],
         },
         handler=get_video_segment,
+    ),
+    # --- Section 13: state-changing actions. Every one of these ONLY
+    # validates and records a pending action -- see agent/actions.py's
+    # module docstring for the real propose -> approve gate. None of them
+    # ever mutate cameras/zones/lines/alerts directly, no matter what the
+    # model does or doesn't say about confirmation. ---
+    ToolSpec(
+        name="create_alert",
+        description=(
+            "Propose creating an alert on a camera for a given event type. Does NOT take effect immediately -- "
+            "returns a pending_action_id that a human must approve via POST /agent/actions/{id}/approve before "
+            "the alert is actually created."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "camera_id": {"type": "string", "description": "The camera's human-readable id."},
+                "event_type": {"type": "string", "description": "One of TRACE's 9 event types, e.g. 'OVERSPEED'."},
+                "message": {"type": "string", "description": "The alert message."},
+                "channel": {"type": "string", "description": "Delivery channel. 'dashboard' (default) or 'api'."},
+            },
+            "required": ["camera_id", "event_type", "message"],
+        },
+        handler=propose_create_alert,
+    ),
+    ToolSpec(
+        name="configure_zone",
+        description=(
+            "Propose configuring a polygon zone on a camera. Does NOT take effect immediately -- returns a "
+            "pending_action_id that a human must approve before the zone is actually created."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "camera_id": {"type": "string", "description": "The camera's human-readable id."},
+                "zone_id": {"type": "string", "description": "The zone's id."},
+                "polygon": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+                    "description": "At least 3 [x, y] points.",
+                },
+            },
+            "required": ["camera_id", "zone_id", "polygon"],
+        },
+        handler=propose_configure_zone,
+    ),
+    ToolSpec(
+        name="configure_line",
+        description=(
+            "Propose configuring a virtual line on a camera. Does NOT take effect immediately -- returns a "
+            "pending_action_id that a human must approve before the line is actually created."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "camera_id": {"type": "string", "description": "The camera's human-readable id."},
+                "line_id": {"type": "string", "description": "The line's id."},
+                "start": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2, "description": "[x, y]"},
+                "end": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2, "description": "[x, y]"},
+            },
+            "required": ["camera_id", "line_id", "start", "end"],
+        },
+        handler=propose_configure_line,
+    ),
+    ToolSpec(
+        name="generate_report",
+        description=(
+            "Propose generating an analytics report (Section 11's metrics bundle) for a camera, optionally over "
+            "a time range. Does NOT take effect immediately -- returns a pending_action_id that a human must "
+            "approve before the report is actually generated."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "camera_id": {"type": "string", "description": "The camera's human-readable id."},
+                "start_time": {"type": "number", "description": "Optional."},
+                "end_time": {"type": "number", "description": "Optional."},
+            },
+            "required": ["camera_id"],
+        },
+        handler=propose_generate_report,
+    ),
+    ToolSpec(
+        name="send_notification",
+        description=(
+            "Propose sending a notification about a camera via a delivery channel. Does NOT take effect "
+            "immediately -- returns a pending_action_id that a human must approve before it's actually sent."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "camera_id": {"type": "string", "description": "The camera's human-readable id."},
+                "message": {"type": "string", "description": "The notification message."},
+                "channel": {"type": "string", "description": "Delivery channel. 'dashboard' (default) or 'api'."},
+            },
+            "required": ["camera_id", "message"],
+        },
+        handler=propose_send_notification,
     ),
 ]
 

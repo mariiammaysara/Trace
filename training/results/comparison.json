@@ -1,0 +1,151 @@
+{
+  "baseline_weights": "yolov8n.pt",
+  "finetuned_weights": "C:\\Users\\ahmed\\Desktop\\Trace\\models\\yolov8n_trace_finetuned.pt",
+  "dataset": "C:\\Users\\ahmed\\Desktop\\Trace\\training\\dataset.yaml",
+  "per_class": {
+    "person": {
+      "pretrained": {
+        "Class": "person",
+        "Images": 14,
+        "Instances": 58,
+        "Box-P": 0.72288,
+        "Box-R": 0.7069,
+        "Box-F1": 0.7148,
+        "mAP50": 0.74385,
+        "mAP50-95": 0.49662,
+        "model": "pretrained"
+      },
+      "finetuned": {
+        "Class": "person",
+        "Images": 14,
+        "Instances": 58,
+        "Box-P": 0.91629,
+        "Box-R": 0.56621,
+        "Box-F1": 0.69991,
+        "mAP50": 0.74663,
+        "mAP50-95": 0.50782,
+        "model": "finetuned"
+      }
+    },
+    "bicycle": {
+      "pretrained": {
+        "Class": "bicycle",
+        "Images": 1,
+        "Instances": 1,
+        "Box-P": 0.52111,
+        "Box-R": 1.0,
+        "Box-F1": 0.68517,
+        "mAP50": 0.995,
+        "mAP50-95": 0.8955,
+        "model": "pretrained"
+      },
+      "finetuned": {
+        "Class": "bicycle",
+        "Images": 1,
+        "Instances": 1,
+        "Box-P": 0.65684,
+        "Box-R": 1.0,
+        "Box-F1": 0.79288,
+        "mAP50": 0.995,
+        "mAP50-95": 0.8955,
+        "model": "finetuned"
+      }
+    },
+    "car": {
+      "pretrained": {
+        "Class": "car",
+        "Images": 5,
+        "Instances": 19,
+        "Box-P": 0.46069,
+        "Box-R": 0.31579,
+        "Box-F1": 0.37472,
+        "mAP50": 0.4058,
+        "mAP50-95": 0.2118,
+        "model": "pretrained"
+      },
+      "finetuned": {
+        "Class": "car",
+        "Images": 5,
+        "Instances": 19,
+        "Box-P": 0.84151,
+        "Box-R": 0.28124,
+        "Box-F1": 0.42159,
+        "mAP50": 0.40493,
+        "mAP50-95": 0.23873,
+        "model": "finetuned"
+      }
+    },
+    "motorcycle": {
+      "pretrained": {
+        "Class": "motorcycle",
+        "Images": 2,
+        "Instances": 3,
+        "Box-P": 1.0,
+        "Box-R": 0.97308,
+        "Box-F1": 0.98635,
+        "mAP50": 0.995,
+        "mAP50-95": 0.8295,
+        "model": "pretrained"
+      },
+      "finetuned": {
+        "Class": "motorcycle",
+        "Images": 2,
+        "Instances": 3,
+        "Box-P": 1.0,
+        "Box-R": 0.92039,
+        "Box-F1": 0.95854,
+        "mAP50": 0.995,
+        "mAP50-95": 0.7767,
+        "model": "finetuned"
+      }
+    },
+    "bus": {
+      "pretrained": {
+        "Class": "bus",
+        "Images": 1,
+        "Instances": 1,
+        "Box-P": 0.63161,
+        "Box-R": 1.0,
+        "Box-F1": 0.77422,
+        "mAP50": 0.995,
+        "mAP50-95": 0.8955,
+        "model": "pretrained"
+      },
+      "finetuned": {
+        "Class": "bus",
+        "Images": 1,
+        "Instances": 1,
+        "Box-P": 0.82615,
+        "Box-R": 1.0,
+        "Box-F1": 0.9048,
+        "mAP50": 0.995,
+        "mAP50-95": 0.8955,
+        "model": "finetuned"
+      }
+    },
+    "truck": {
+      "pretrained": {
+        "Class": "truck",
+        "Images": 3,
+        "Instances": 4,
+        "Box-P": 0.81351,
+        "Box-R": 0.5,
+        "Box-F1": 0.61934,
+        "mAP50": 0.55155,
+        "mAP50-95": 0.4401,
+        "model": "pretrained"
+      },
+      "finetuned": {
+        "Class": "truck",
+        "Images": 3,
+        "Instances": 4,
+        "Box-P": 1.0,
+        "Box-R": 0.37018,
+        "Box-F1": 0.54034,
+        "mAP50": 0.54935,
+        "mAP50-95": 0.41368,
+        "model": "finetuned"
+      }
+    }
+  }
+}

@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from agent import actions
 from agent.agent import AgentAnswer, ToolCallRecord
 from api.app import app
 from api.deps import get_agent, get_db
@@ -368,6 +369,105 @@ def test_query_agent_without_configured_llm_returns_503(client, monkeypatch):
 
     assert response.status_code == 503
     assert "ANTHROPIC_API_KEY" in response.json()["detail"]
+
+
+# --- POST /alerts, GET /cameras/{id}/alerts ---
+
+
+def test_create_alert_success(client, db_session):
+    repository.get_or_create_camera(db_session, "cam_alert")
+    db_session.commit()
+
+    response = client.post(
+        "/alerts", json={"camera_id": "cam_alert", "event_type": "OVERSPEED", "message": "too fast", "channel": "dashboard"}
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["camera_id"] == "cam_alert"
+    assert body["event_type"] == "OVERSPEED"
+    assert body["message"] == "too fast"
+
+
+def test_create_alert_unknown_camera_returns_404(client):
+    response = client.post("/alerts", json={"camera_id": "no-such-camera", "event_type": "OVERSPEED", "message": "x"})
+    assert response.status_code == 404
+
+
+def test_list_camera_alerts_success(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_alert_list")
+    repository.create_alert(db_session, camera, event_type="OVERSPEED", message="hello", channel="dashboard")
+    db_session.commit()
+
+    response = client.get("/cameras/cam_alert_list/alerts")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["message"] == "hello"
+
+
+def test_list_camera_alerts_unknown_camera_returns_404(client):
+    response = client.get("/cameras/no-such-camera/alerts")
+    assert response.status_code == 404
+
+
+# --- POST /agent/actions/{id}/approve, GET /agent/actions/{id} ---
+
+
+def test_approve_agent_action_executes_it(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_action")
+    db_session.commit()
+
+    proposal = actions.propose_create_alert(db_session, "cam_action", "OVERSPEED", "pending message")
+    db_session.commit()
+
+    response = client.post(f"/agent/actions/{proposal['action_id']}/approve")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "executed"
+    assert body["result"]["alert_id"] is not None
+    assert len(repository.list_alerts_for_camera(db_session, camera)) == 1
+
+
+def test_approve_agent_action_unknown_id_returns_404(client):
+    response = client.post("/agent/actions/999999/approve")
+    assert response.status_code == 404
+
+
+def test_approve_agent_action_already_executed_returns_409(client, db_session):
+    repository.get_or_create_camera(db_session, "cam_action_twice")
+    db_session.commit()
+
+    proposal = actions.propose_create_alert(db_session, "cam_action_twice", "OVERSPEED", "once")
+    db_session.commit()
+
+    first = client.post(f"/agent/actions/{proposal['action_id']}/approve")
+    second = client.post(f"/agent/actions/{proposal['action_id']}/approve")
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+
+
+def test_get_agent_action_success(client, db_session):
+    repository.get_or_create_camera(db_session, "cam_action_get")
+    db_session.commit()
+
+    proposal = actions.propose_create_alert(db_session, "cam_action_get", "OVERSPEED", "look at me")
+    db_session.commit()
+
+    response = client.get(f"/agent/actions/{proposal['action_id']}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["action_type"] == "create_alert"
+
+
+def test_get_agent_action_unknown_id_returns_404(client):
+    response = client.get("/agent/actions/999999")
+    assert response.status_code == 404
 
 
 # --- 500 handling ---

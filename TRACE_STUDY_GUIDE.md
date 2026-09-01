@@ -241,18 +241,52 @@ TRACE needs **detection**: it must localize multiple objects per frame, not just
 ### Why we choose our detector for TRACE `[IMPLEMENTED — provisional, pending benchmarking, Section 20]`
 
 - **Chosen for now: YOLOv8n (Ultralytics, COCO-pretrained, `yolov8n.pt`)** — the nano variant, for the same reasons Section 2 always named as the default candidate: tooling maturity, speed, ease of export to ONNX/TensorRT later (Section 14), and it needed zero training to get a working Phase 2 pipeline end-to-end.
-- **This is a provisional pick, not a final one.** It has not been benchmarked against RT-DETR or larger YOLO variants (s/m/l) on real TRACE-like scenes — that comparison is still `[PLANNED]` for Section 20. Nano was chosen purely to get inference working fast; Phase 13 (Benchmarks) is where FPS/accuracy trade-offs actually get measured and this choice gets revisited.
+- **This is a provisional pick, not a final one.** It has not been benchmarked against RT-DETR or larger YOLO variants (s/m/l) on real TRACE-like scenes — that comparison is still `[PLANNED]` for Section 20. Nano was chosen purely to get inference working fast; a real FPS/accuracy benchmarking phase, not yet built, is where that comparison actually happens.
 - RT-DETR remains the documented alternative to benchmark against once real accuracy/FPS numbers are needed.
+
+### Fine-tuning: a real, measured before/after `[IMPLEMENTED — Phase 13]`
+
+Until Phase 13, the detector had only ever been used pretrained. This phase built a real fine-tuning pipeline (`training/`) and, critically, actually ran it and measured the result against the pretrained baseline — not just built the pipeline and assumed it would help.
+
+**Dataset, exactly**: Ultralytics' own **COCO128** — the first 128 images of COCO train2017, real photographs with real human-annotated COCO labels, officially distributed at `https://github.com/ultralytics/assets/releases/download/v0.0.0/coco128.zip` (~6.7MB). **Not** Ultralytics' bundled `coco128.yaml` as-is — its `train:`/`val:` both point at the exact same 128 images, which would make a before/after comparison meaningless (evaluating a model on images it just trained on). `training/prepare_dataset.py` builds a genuine, disjoint, deterministic held-out split instead: **97 train images / 29 val images**. A first attempt at a plain "every 5th image" split put *zero* `bicycle` and *zero* `bus` instances in val (COCO128 is heavily imbalanced toward `person`: 62/128 images vs. 3 for `bicycle`, 5 for `bus`) — a real problem found while building this, fixed with a stratified-minimum-coverage pass that guarantees every target class has ≥1 val instance (see that script's docstring). Even after the fix, `bicycle` and `bus` each have exactly **1** val instance — real numbers, but treat those two specifically as low-confidence, not strong evidence.
+
+The full 80-class COCO head is kept — **not** narrowed to TRACE's 6 classes. `YoloDetector` already filters to `DEFAULT_CLASS_ALLOWLIST` by class *name*, after inference (Section 2 above); retraining with a different class count/order would break that contract and require re-architecting `YoloDetector` too. This fine-tune nudges the existing 80-class model's weights toward TRACE-relevant scenes, it doesn't replace its vocabulary.
+
+**Config, tracked not hardcoded**: `training/config.yaml` — `epochs: 3` (CPU-only environment, no CUDA available; a portfolio-scale budget, not a production one), `imgsz: 640`, `batch: 8`, `lr0: 0.001` (smaller than YOLO's from-scratch default `0.01`, since fine-tuning nudges an already-good model rather than training one from nothing), `optimizer: auto`, `seed: 0`, and augmentation with `mosaic: 0.0` (disabled — on ~100 images mosaic mostly just recombines the same handful of scenes). `training/dataset.yaml` — the data config, COCO's 80 class names verbatim.
+
+**The real result — precision/recall/mAP50/mAP50-95, both models, same held-out val split** (`training/evaluate.py`, real numbers, `training/results/comparison.{json,txt}`):
+
+| Class | Model | Images | Instances | P | R | mAP50 | mAP50-95 |
+|---|---|---|---|---|---|---|---|
+| person | pretrained | 14 | 58 | 0.723 | 0.707 | 0.744 | 0.497 |
+| person | fine-tuned | 14 | 58 | 0.916 | 0.566 | 0.747 | 0.508 |
+| car | pretrained | 5 | 19 | 0.461 | 0.316 | 0.406 | 0.212 |
+| car | fine-tuned | 5 | 19 | 0.842 | 0.281 | 0.405 | 0.239 |
+| motorcycle | pretrained | 2 | 3 | 1.000 | 0.973 | 0.995 | 0.830 |
+| motorcycle | fine-tuned | 2 | 3 | 1.000 | 0.920 | 0.995 | 0.777 |
+| bus | pretrained | 1 | 1 | 0.632 | 1.000 | 0.995 | 0.895 |
+| bus | fine-tuned | 1 | 1 | 0.826 | 1.000 | 0.995 | 0.895 |
+| truck | pretrained | 3 | 4 | 0.814 | 0.500 | 0.552 | 0.440 |
+| truck | fine-tuned | 3 | 4 | 1.000 | 0.370 | 0.549 | 0.414 |
+| bicycle | pretrained | 1 | 1 | 0.521 | 1.000 | 0.995 | 0.895 |
+| bicycle | fine-tuned | 1 | 1 | 0.657 | 1.000 | 0.995 | 0.895 |
+
+**Overall (all 80 classes, not just TRACE's 6, same val split)**: pretrained P=0.615 R=0.591 mAP50=0.694 mAP50-95=0.507; fine-tuned P=0.766 R=0.542 mAP50=0.657 mAP50-95=0.480.
+
+**Honest conclusion: fine-tuning did not clearly improve results, and this is a real, reportable outcome, not a failure to hide.** Per-target-class mAP50/mAP50-95 stayed essentially flat (several classes literally identical — expected, since `mAP` is threshold-integrated and 1–4 val instances leave little room to move) or moved within noise. What *did* move, consistently, across almost every target class: **precision went up, recall went down** (person: R 0.707→0.566; car: R 0.316→0.281; truck: R 0.500→0.370) — the fine-tuned model became more conservative (fewer, higher-confidence boxes), not more accurate. And overall 80-class mAP50 measurably *dropped* (0.694→0.657) — a real cost of fine-tuning narrowly on person-heavy, TRACE-relevant data for a few epochs: it traded away some general accuracy without buying a clear win on the classes that mattered. At this dataset size (97 train images, 3 epochs, CPU-only), that trade-off doesn't pay for itself.
+
+**Decision — the live pipeline keeps loading the pretrained baseline by default.** `DEFAULT_MODEL_PATH` in `src/detection/yolo_detector.py` stays `"yolov8n.pt"`; the fine-tuned checkpoint (`models/yolov8n_trace_finetuned.pt`, gitignored like any other `.pt`) remains available and swappable via the `TRACE_DETECTOR_WEIGHTS` environment variable (no code change needed to try it), but isn't the default because it didn't demonstrate a real improvement here. This is exactly the outcome to revisit with a larger, more balanced, TRACE-specific dataset (real recorded footage rather than a 128-image general-purpose slice) rather than treating this result as final.
 
 ### Where this is implemented `[IMPLEMENTED]`
 
 - `src/detection/detector.py` — `Detection` (dataclass: `bbox`, `class_name`, `confidence`, `frame_id`, `timestamp`) and the abstract `Detector` interface (`detect(frame: Frame) -> list[Detection]`), so the concrete model stays swappable per this section's design decision above.
-- `src/detection/yolo_detector.py` — `YoloDetector(Detector)`: `__init__(model_path: str = "yolov8n.pt", confidence_threshold: float = 0.25, class_allowlist: tuple[str, ...] | None = DEFAULT_CLASS_ALLOWLIST, device: str | None = None)`. `DEFAULT_CLASS_ALLOWLIST = ("person", "car", "motorcycle", "bus", "truck", "bicycle")`. Confidence filtering is delegated to Ultralytics' own `conf=` parameter (NMS included); class-allowlist filtering happens after, by class name.
+- `src/detection/yolo_detector.py` — `YoloDetector(Detector)`: `__init__(model_path: str = DEFAULT_MODEL_PATH, confidence_threshold: float = 0.25, class_allowlist: tuple[str, ...] | None = DEFAULT_CLASS_ALLOWLIST, device: str | None = None)`. `DEFAULT_CLASS_ALLOWLIST = ("person", "car", "motorcycle", "bus", "truck", "bicycle")`. `DEFAULT_MODEL_PATH` (Phase 13, see above) reads `TRACE_DETECTOR_WEIGHTS` at import time, defaulting to `"yolov8n.pt"`. Confidence filtering is delegated to Ultralytics' own `conf=` parameter (NMS included); class-allowlist filtering happens after, by class name.
 - `Detection.bbox` is **xyxy**: `(x_min, y_min, x_max, y_max)` in absolute pixel coordinates of the source frame, top-left origin — documented explicitly in the dataclass docstring since Section 1.3 flags xyxy/xywh mismatches as a classic bug.
 - **A real color-space trap found and handled here:** `Frame.image` is RGB (Phase 1's boundary conversion), but Ultralytics' numpy-array `predict()` path assumes a BGR array and flips it internally (`BasePredictor.preprocess`, confirmed by reading the Ultralytics source) — feeding it `Frame.image` directly would silently double-flip the channels. `YoloDetector.detect()` converts RGB back to BGR immediately before calling `predict()` for exactly this reason. This is the same class of bug Section 1.1 describes in the abstract; this is where it actually showed up.
 - `scripts/detect_video.py` — CLI wiring `FrameSource` → `YoloDetector` → drawn boxes, either saved to `--output <path>` (`cv2.VideoWriter`) and/or shown live with `--display`; also takes `--frame-skip`, `--confidence`, `--classes`, `--model`.
-- `tests/test_detector.py` — 5 tests against a fake `ultralytics.YOLO` (monkeypatched, no weights download) covering allowlist filtering, confidence-threshold pass-through, and invalid-input errors; 1 integration test running the real pretrained model against real fixture frames, asserting only that returned `Detection` objects are well-formed (valid bbox ordering, confidence in `[0, 1]`, non-empty class name) — never asserting specific detections, since YOLO output on arbitrary frames isn't deterministic enough to pin down.
+- `tests/test_detector.py` — 5 tests against a fake `ultralytics.YOLO` (monkeypatched, no weights download) covering allowlist filtering, confidence-threshold pass-through, and invalid-input errors; 1 integration test running the real pretrained model against real fixture frames, asserting only that returned `Detection` objects are well-formed (valid bbox ordering, confidence in `[0, 1]`, non-empty class name) — never asserting specific detections, since YOLO output on arbitrary frames isn't deterministic enough to pin down; 1 test (Phase 13) confirming `DEFAULT_MODEL_PATH` actually reads `TRACE_DETECTOR_WEIGHTS` (via module reload, since a function parameter default binds once at def-time).
 - Downloaded weights (e.g. `yolov8n.pt`) are gitignored (`*.pt`, `*.onnx`, `*.engine`) — Ultralytics fetches them on first use, they are not committed as source.
+- **Fine-tuning pipeline (Phase 13)** — `training/prepare_dataset.py` (data prep: downloads COCO128, builds the stratified train/val split), `training/config.yaml` + `training/dataset.yaml` (checked-in, reproducible config), `training/train.py` (train — reads both yamls, never hardcodes hyperparameters), `training/export_weights.py` (export — copies the run's `best.pt` to the stable, gitignored `models/yolov8n_trace_finetuned.pt`), `training/evaluate.py` (the baseline-vs-fine-tuned comparison above, also written to `training/results/comparison.{json,txt}`). `tests/test_training_pipeline.py` — one end-to-end smoke test on Ultralytics' tiny `coco8` (4 train + 4 val images, genuinely separate — 1 epoch, `imgsz=64`), confirming the pipeline produces a checkpoint and doesn't crash, deliberately never requiring the full COCO128 dataset/training run to be present. `datasets/`, `training/data/`, `training/runs/` are gitignored (regenerated by running the scripts); `training/results/` is checked in (the actual measured evidence, not regenerable data).
 
 ### Observed limitations (Phase 2 testing)
 
@@ -267,11 +301,15 @@ TRACE needs **detection**: it must localize multiple objects per frame, not just
 - [ ] I can explain what NMS removes and why it's needed.
 - [ ] I can explain mAP50 vs mAP50-95 and why the stricter one is more informative.
 - [ ] I can explain why TRACE treats the detector as swappable rather than hard-wired.
+- [ ] I can explain why Phase 13's fine-tune didn't improve mAP but did shift precision/recall, and what that implies about what actually changed in the model.
+- [ ] I can explain why fine-tuning kept the full 80-class head instead of retraining just the 6 target classes.
 
 ### Questions to test myself
 1. Why would two overlapping boxes for the same real object appear before NMS?
 2. If precision is high but recall is low, what does that mean is happening in TRACE's counts?
 3. What's the practical (not academic) reason to keep the detector behind an interface?
+4. Why did the stratified split in `prepare_dataset.py` matter — what would have gone wrong (concretely, not just "it's bad practice") if the naive stride split had shipped instead?
+5. Given the real numbers, was building the fine-tuning pipeline itself still worth doing even though this particular run didn't win? Why or why not?
 
 ---
 
@@ -810,7 +848,7 @@ A clean separation: **API layer** (routes, request/response shapes) → **servic
 - Error handling: convert internal exceptions (not-found, invalid zone geometry, database errors) into meaningful HTTP status codes and structured error responses, not raw stack traces.
 - **How TRACE does each of the three required cases**: 422 for a malformed body/query param is automatic (Pydantic + FastAPI, including a custom `field_validator` for domain rules like "a zone needs ≥3 points" or "a line's start/end must differ" — a plain `ValueError` inside a validator becomes a 422 with no extra code). 404 is raised explicitly once a repository lookup returns `None` (`api/common.py::get_camera_or_404`, and inline in `objects.py` for an unknown trajectory id) — never silently returning an empty/default value. 500 is caught by one global handler (`app.exception_handler(Exception)` in `api/app.py`) that logs the real exception server-side and always returns the same clean `{"detail": "internal server error"}` body — verified by test (`tests/test_api.py::test_unexpected_error_returns_clean_500_not_a_stack_trace`, which monkeypatches a repository function to raise and asserts the response body never contains the exception's class name or a traceback).
 
-### The actual TRACE API `[IMPLEMENTED — all seven Section 8/9 CRUD/query endpoints plus POST /agent/query (Phase 11); alerts is [PLANNED], Phase 12]`
+### The actual TRACE API `[IMPLEMENTED — every endpoint below, including alerts and agent actions (Phase 12)]`
 
 | Endpoint | Purpose | Input | Output | Route function |
 |---|---|---|---|---|
@@ -821,8 +859,11 @@ A clean separation: **API layer** (routes, request/response shapes) → **servic
 | `GET /analytics` | Aggregated stats (Section 11) | query `camera_id?`/`start_time?`/`end_time?` | `AnalyticsSummary` (bundles 7 of Section 11's 8 functions) | `api/routers/analytics.py::get_analytics` |
 | `POST /zones` | Configure a polygon zone on a camera | `ZoneCreate` (camera_id, zone_id, polygon — validated ≥3 points) | `ZoneRead` | `api/routers/zones.py::create_zone` |
 | `POST /lines` | Configure a virtual line on a camera | `LineCreate` (camera_id, line_id, start, end — validated start≠end) | `LineRead` | `api/routers/lines.py::create_line` |
-| `POST /agent/query` | Ask the Vision Agent a natural-language question | `AgentQueryRequest` (question) | `AgentQueryResponse` (answer, tool_calls) | `api/routers/agent.py::query_agent` — `[IMPLEMENTED]`, Section 12; returns `503` if no LLM API key is configured |
-| `POST /alerts` | Configure or trigger an alert rule | rule definition | alert/rule record | `[PLANNED]` — Phase 12, depends on a not-yet-built alert-rule system |
+| `POST /agent/query` | Ask the Vision Agent a natural-language question | `AgentQueryRequest` (question) | `AgentQueryResponse` (answer, tool_calls) | `api/routers/agent.py::query_agent` — Section 12; returns `503` if no LLM API key is configured |
+| `POST /alerts` | Create an alert directly (Section 13) — bypasses the agent's propose/approve gate, since a direct API call is already a real confirmed action | `AlertCreate` (camera_id, event_type, message, channel?) | `AlertRead` | `api/routers/alerts.py::create_alert` |
+| `GET /cameras/{camera_id}/alerts` | List alerts for a camera — the "dashboard/API" delivery channel: an alert is "delivered" by existing here, queryable | path `camera_id` | `list[AlertRead]` | `api/routers/cameras.py::list_camera_alerts` |
+| `GET /agent/actions/{id}` | Review one pending/executed agent action before deciding whether to approve it | path `id` | `PendingActionRead` | `api/routers/agent.py::get_agent_action` |
+| `POST /agent/actions/{id}/approve` | The real approval gate (Section 13) — the only way any of the agent's 5 state-changing tools actually take effect | path `id` | `PendingActionRead` (status="executed", result) — `409` if already executed | `api/routers/agent.py::approve_agent_action` |
 
 **Two deliberate path-parameter decisions, since the table above only wrote `{id}` generically:**
 - `GET /cameras/{camera_id}/events` uses the camera's human-readable **string** id (`"demo"`, `"gate_2"`) — the identifier already used everywhere else in this codebase (config filenames, `EventEngine(camera_id=...)`, the event schema itself).
@@ -836,7 +877,7 @@ A clean separation: **API layer** (routes, request/response shapes) → **servic
 - `src/api/deps.py` — `get_db()`, one SQLAlchemy session per request (overridden in tests to reuse the same rolled-back-transaction session as the repository/analytics tests).
 - `src/api/schemas.py` — every Pydantic request/response model, including the two custom validators described above.
 - `src/api/common.py` — `get_camera_or_404`, the one small piece of shared "look up or fail" logic every camera-scoped route needs.
-- `src/api/routers/` — `cameras.py`, `videos.py`, `zones.py`, `lines.py`, `objects.py`, `analytics.py`, `agent.py` (Phase 11, Section 12), one module per resource.
+- `src/api/routers/` — `cameras.py`, `videos.py`, `zones.py`, `lines.py`, `objects.py`, `analytics.py`, `agent.py` (Phase 11, Section 12; extended in Phase 12/Section 13 with the approval endpoints), `alerts.py` (Phase 12, Section 13), one module per resource.
 - Tests: `tests/test_api.py`, using FastAPI's `TestClient` — one success and one failure case per endpoint (15 tests total), plus the 500-handler test. **Real finding while writing these, not a framework bug**: Starlette's `TestClient` re-raises the original exception for debuggability by default (`raise_server_exceptions=True`) even when a registered exception handler already produced a real response — the 500 test needed `TestClient(app, raise_server_exceptions=False)` to actually observe the clean response instead of the raw exception. Also verified against a real running `uvicorn` server with `curl` (not just `TestClient`), including the 404 and 422 paths, since this environment's FastAPI/Starlette versions turned out newer than expected and `TestClient`-only verification felt worth double-checking.
 
 ---
@@ -871,8 +912,6 @@ Every function in this section is a read-only SQL query against the tables Secti
 - `src/analytics/queries.py` — all eight functions above, plus a shared `_camera_pk()` helper that resolves a human-readable `camera_id` string to its internal integer primary key (or a sentinel that matches nothing, for an unknown `camera_id`, rather than raising or silently ignoring the filter).
 - Every function takes a SQLAlchemy `Session` as its first argument and keyword-only filters (`camera_id`, `class_name`, `zone_id`, `line_id`, `start_time`, `end_time` where relevant) — no hidden global state, no ORM session management inside the analytics layer itself.
 - `tests/test_analytics.py` — seeds a fully deterministic scenario (2 objects, 7 events, one completed 3.0s zone visit, 3 line crossings from 2 distinct objects) via the real repository layer, then asserts every one of the 8 functions against the exact expected number computed by hand from that scenario — not just "it returns something," a specific known value per function.
-
-> **Note:** Sections 13–18, 20, and 21 (listed in the Table of Contents) have not been written yet — only Sections 0–12 exist below this point, plus Section 19 (Implementation Map), added here ahead of the sections it numerically follows so completed work has somewhere to be recorded. Fill in 13–18/20/21 as those phases are planned; renumber/reorder at that point if needed.
 
 ## 12. Vision Agent
 
@@ -947,6 +986,53 @@ Wired in `src/api/routers/agent.py`: `{"question": str}` in, `{"answer": str, "t
 - `src/api/routers/agent.py`, `src/api/deps.py::get_agent`, `src/api/schemas.py`'s `AgentQueryRequest`/`AgentQueryResponse`/`AgentToolCallRead`.
 - `pyproject.toml`'s `agent` optional-dependency group (`anthropic>=0.40`).
 - Tests: `tests/test_agent_tools.py` (17 tests — one per tool's argument-building and error-path behavior, repository/analytics calls mocked), `tests/test_agent.py` (5 tests — the real orchestration loop against real seeded Postgres data, including the 80 km/h known-answer scenario and the no-matching-events scenario), `tests/test_api.py` (3 new tests — success, validation, and the 503-when-unconfigured path). 189 tests total in `tests/`, all passing.
+
+## 13. Agent Actions & Safety
+
+*Added in Phase 12 (built after Phase 13's detector fine-tuning pipeline — the two phase numbers don't line up with section numbers here, since phases were built out of the study guide's section order; see the Implementation Map for what actually landed when). This section did not exist before this phase.*
+
+### The real approval gate `[IMPLEMENTED]`
+
+Section 12's Vision Agent tools are all read-only. This phase adds five **state-changing** tools — `create_alert`, `configure_zone`, `configure_line`, `generate_report`, `send_notification` — and, per this phase's explicit requirement, none of them may take effect just because the LLM decided to call them. The gate is a real, two-step, code-level mechanism, not a prompt instruction the model could ignore or a single tool the model could complete on its own:
+
+1. **Propose.** Each state-changing tool (`agent/actions.py`'s `propose_*` functions) validates its arguments and, if valid, inserts a `PendingAction` row (`status="pending"`) describing exactly what it wants to do. It never touches `cameras`/`zones`/`lines`/`alerts` itself — the row is the only thing that exists after this step.
+2. **Approve.** `execute_pending_action()` is the *only* function in this codebase that performs the real mutation. It re-checks the row is still `"pending"` (so re-approving an already-executed action is a no-op error, not a double execution), dispatches to the matching handler, and marks the row `"executed"` with its result.
+
+**The deliberate part**: `execute_pending_action()` is reachable from exactly one place — `POST /agent/actions/{id}/approve`. It is **not** registered as an agent tool. If approval were just another tool, a single conversation turn could call `propose_create_alert` then an `approve` tool back to back, with no real human step in between — which would make the "gate" purely cosmetic. Approval only happens through a separate REST call representing a genuine out-of-band action (e.g. a human clicking "Approve" in a UI), something the LLM's own tool-calling loop cannot complete by itself no matter what it decides. `GET /agent/actions/{id}` exists so that human/UI can review a proposal's exact parameters and summary before deciding.
+
+This was verified for real, not just asserted: `tests/test_agent_actions.py` confirms every `propose_*` call leaves the database completely unchanged (no zone/line/alert row exists), and `tests/test_api.py` drove the full HTTP flow against a real running `uvicorn` instance — `GET /cameras/{id}/alerts` returns `[]` after proposing, `POST /agent/actions/{id}/approve` returns `200` with the real created alert, `GET /cameras/{id}/alerts` then returns it, and a second `POST .../approve` on the same id returns `409` (not a second alert).
+
+### Real-time alert triggering `[IMPLEMENTED]`
+
+Separate from the agent entirely: `src/alerts/rules.py` defines `ALERT_TRIGGERING_EVENT_TYPES = {"OVERSPEED"}` (a plain, extensible set — "or other configured" per this phase's requirement just means adding to it) and `should_alert(event_type) -> bool`. `database.repository.add_event_from_pipeline()` — the one real entry point every persisted event goes through (Section 9) — calls `should_alert()` synchronously right after persisting the event, and if true, creates an `Alert` row referencing it via `repository.create_alert()`. No LLM, no agent, no approval step: this mirrors Section 7's event engine being deterministic and rule-based, not something that should gain nondeterminism or an LLM round-trip on a real-time write path.
+
+**Delivery channel**: "dashboard/API at minimum" is satisfied by the alert simply existing and being queryable — `GET /cameras/{camera_id}/alerts` (a dashboard would poll this) and `POST /alerts` (direct creation, for a system/human, bypassing the agent's propose/approve gate entirely since a direct API call is already a real confirmed action, same as `POST /zones`/`POST /lines`). **Telegram was explicitly asked about and declined for this phase** (the user chose dashboard/API-only, citing needing real bot credentials this environment doesn't have) — not implemented, not silently skipped.
+
+### Why `generate_report` goes through the same gate as the others `[IMPLEMENTED]`
+
+Unlike `create_alert`/`configure_zone`/`configure_line`/`send_notification`, generating a report doesn't mutate TRACE's core domain state — it's a read, reusing the exact same Section 11 analytics functions `GET /analytics` bundles (`object_count`, `line_crossing_count`, `zone_violation_count`, `average_dwell_time`, `traffic_volume`, `event_frequency`, `per_class_stats`). It still goes through propose→approve because this phase's requirement lists all five tools together as "state-changing" without carving out an exception, and because uniformity is a real safety property here: one mechanism to reason about and test, not "four gated tools plus one that quietly bypasses the gate because someone judged it harmless." The report itself isn't persisted separately — like `GET /analytics`, it's computed fresh; the executed `PendingAction.result` *is* the report.
+
+### Where this is implemented `[IMPLEMENTED]`
+
+- `src/database/models.py` — `Alert` (camera_id, event_id (nullable), event_type, message, channel, created_at) and `PendingAction` (action_type, parameters (JSON), summary, status, result (JSON), created_at, executed_at).
+- `src/database/repository.py` — additive: `create_alert`, `list_alerts_for_camera`, `get_alert`, `create_pending_action`, `get_pending_action`; `add_event_from_pipeline` extended to call `alerts.should_alert()` and create an `Alert` when it fires.
+- `src/alerts/rules.py` — `ALERT_TRIGGERING_EVENT_TYPES`, `should_alert()`.
+- `src/agent/actions.py` — `propose_create_alert`, `propose_configure_zone`, `propose_configure_line`, `propose_generate_report`, `propose_send_notification`, `execute_pending_action()`, and the private `_execute_*` handlers each one dispatches to.
+- `src/agent/tools.py` — the five action tools registered in `TOOL_SPECS` alongside Section 12's seven read-only ones (12 total).
+- `src/api/routers/alerts.py` (`POST /alerts`), `src/api/routers/cameras.py` (`GET /cameras/{camera_id}/alerts`, added to the existing router), `src/api/routers/agent.py` (`GET /agent/actions/{id}`, `POST /agent/actions/{id}/approve`), `src/api/schemas.py`'s `AlertCreate`/`AlertRead`/`PendingActionRead`.
+- Tests: `tests/test_agent_actions.py` (15 tests — propose-without-approval leaves the DB unchanged for every one of the 5 tools, approval executes exactly once, unknown/already-executed ids error cleanly, and the OVERSPEED→Alert end-to-end path plus a non-triggering-type negative case), `tests/test_api.py` (9 new tests covering `POST /alerts`, `GET /cameras/{id}/alerts`, `GET /agent/actions/{id}`, `POST /agent/actions/{id}/approve` including the 409-on-double-approval case). 215 tests total in `tests/`, all passing.
+
+### What I should know
+- [ ] I can explain why approval is a separate REST endpoint and not an agent tool.
+- [ ] I can explain why `generate_report` — which doesn't mutate anything — still goes through the same gate as `create_alert`.
+- [ ] I can explain why real-time OVERSPEED alerting happens in the repository layer, not the agent.
+
+### Questions to test myself
+1. What specific test proves the approval gate is a real code-level restriction and not just something the tests happen not to exercise?
+2. If a future event type needed to trigger an alert, what's the exact one-line change, and why doesn't it touch the agent at all?
+3. Why does `POST /alerts` bypass the propose/approve gate while the agent's `create_alert` tool doesn't, even though both end up calling the same `repository.create_alert()`?
+
+> **Note:** Sections 14–18, 20, and 21 (listed in the Table of Contents) have not been written yet — only Sections 0–13 exist above this point, plus Section 19 (Implementation Map), added here ahead of the sections it numerically follows so completed work has somewhere to be recorded. Fill in 14–18/20/21 as those phases are planned; renumber/reorder at that point if needed.
 
 ## 19. Implementation Map
 
@@ -1050,7 +1136,21 @@ Wired in `src/api/routers/agent.py`: `{"question": str}` in, `{"answer": str, "t
 | LLM client boundary + real Anthropic tool-use integration (Section 12, added in Phase 11) | `[IMPLEMENTED — untested by live call, see Section 12's caveat]` | `src/agent/llm.py` | `LLMClient`/`LLMSession` protocol, `AnthropicLLMClient`, `LLMNotConfiguredError`, `build_default_llm_client()` (reads `ANTHROPIC_API_KEY`) |
 | Agent orchestration loop (Section 12, added in Phase 11) | `[IMPLEMENTED]` | `src/agent/agent.py` | `VisionAgent.answer(session, question)` — provider-agnostic tool-call loop, `AgentAnswer`, `ToolCallRecord` |
 | `POST /agent/query` (Section 10, Section 12, added in Phase 11) | `[IMPLEMENTED]` | `src/api/routers/agent.py`, `src/api/deps.py::get_agent`, `src/api/schemas.py` | `AgentQueryRequest`/`AgentQueryResponse`/`AgentToolCallRead`; `get_agent()` returns a clean `503` (not the generic `500`) when no LLM API key is configured |
-| Vision Agent test coverage (Section 12, Section 16, added in Phase 11) | `[IMPLEMENTED]` | `tests/test_agent_tools.py`, `tests/test_agent.py`, `tests/test_api.py` | 17 mocked per-tool unit tests + 5 real-seeded-database orchestration tests (including the "did any vehicle exceed 80 km/h" known-answer case and a no-matching-events case) + 3 API-layer tests (success, validation, 503-when-unconfigured); 189 tests total in `tests/`, all passing |
+| Vision Agent test coverage (Section 12, Section 16, added in Phase 11) | `[IMPLEMENTED]` | `tests/test_agent_tools.py`, `tests/test_agent.py`, `tests/test_api.py` | 17 mocked per-tool unit tests + 5 real-seeded-database orchestration tests (including the "did any vehicle exceed 80 km/h" known-answer case and a no-matching-events case) + 3 API-layer tests (success, validation, 503-when-unconfigured) |
+| Detector fine-tuning data prep (Section 2, added in Phase 13) | `[IMPLEMENTED]` | `training/prepare_dataset.py` | Downloads real COCO128 (Ultralytics' own, first 128 images of COCO train2017) via `ultralytics.data.utils.check_det_dataset`; builds a genuine, deterministic, stratified-minimum-coverage 97/29 train/val split (`training/data/coco128_split/{train,val}.txt`, gitignored) — not Ultralytics' bundled `coco128.yaml`, whose train/val are the same 128 images |
+| Fine-tuning config + dataset config, checked in (Section 2, added in Phase 13) | `[IMPLEMENTED]` | `training/config.yaml`, `training/dataset.yaml` | Every hyperparameter (epochs, imgsz, batch, lr0, augmentation) tracked in a checked-in file, not hardcoded in `train.py`; `dataset.yaml` keeps COCO's full 80 class names, unmodified |
+| Fine-tuning train/export scripts (Section 2, added in Phase 13) | `[IMPLEMENTED]` | `training/train.py`, `training/export_weights.py` | `train()` reads `config.yaml`/`dataset.yaml`, calls Ultralytics' `model.train(...)`, writes to `training/runs/` (gitignored); `export()` copies the run's `best.pt` to the stable `models/yolov8n_trace_finetuned.pt` (gitignored, like every other `.pt`) |
+| Baseline-vs-fine-tuned evaluation (Section 2, added in Phase 13) | `[IMPLEMENTED]` | `training/evaluate.py` | Runs `model.val()` for both the pretrained baseline and the fine-tuned checkpoint against the SAME held-out val split, extracts per-class P/R/mAP50/mAP50-95 for TRACE's 6 target classes via Ultralytics' own `DetMetrics.summary()`; writes `training/results/comparison.{json,txt}` (checked in — the real measured evidence, not regenerable data) |
+| `DEFAULT_MODEL_PATH` — explicit, configurable default weights (Section 2, added in Phase 13) | `[IMPLEMENTED]` | `src/detection/yolo_detector.py` | Reads `TRACE_DETECTOR_WEIGHTS` env var at import time, defaulting to `"yolov8n.pt"` — kept as the default after Phase 13's real measurement showed the fine-tune didn't clearly improve results (see Section 2 for the full comparison and reasoning); the fine-tuned checkpoint remains swappable in without a code change |
+| Fine-tuning pipeline test coverage (Section 2, Section 16, added in Phase 13) | `[IMPLEMENTED]` | `tests/test_training_pipeline.py`, `tests/test_detector.py` | 1 end-to-end smoke test on Ultralytics' tiny `coco8` (4+4 images, 1 epoch, `imgsz=64`) confirming `train.py` → `export_weights.py` → `evaluate.py` runs without crashing, deliberately separate from any test requiring the full COCO128 run; 1 test confirming `DEFAULT_MODEL_PATH` actually reads `TRACE_DETECTOR_WEIGHTS` (via module reload) |
+| `Alert`/`PendingAction` schema (Section 9, Section 13, added in Phase 12) | `[IMPLEMENTED]` | `src/database/models.py` | `Alert` (camera_id, event_id nullable, event_type, message, channel, created_at); `PendingAction` (action_type, parameters JSON, summary, status, result JSON, created_at, executed_at) — Section 13's real approval-gate state |
+| Alert/pending-action repository functions (Section 13, added in Phase 12) | `[IMPLEMENTED]` | `src/database/repository.py` | `create_alert`, `list_alerts_for_camera`, `get_alert`, `create_pending_action`, `get_pending_action`; `add_event_from_pipeline` extended to call `alerts.should_alert()` and create an `Alert` synchronously when it fires |
+| Real-time alert triggering rule (Section 7, Section 13, added in Phase 12) | `[IMPLEMENTED]` | `src/alerts/rules.py` | `ALERT_TRIGGERING_EVENT_TYPES = {"OVERSPEED"}`, `should_alert(event_type)` — pure, no DB/LLM access, called synchronously from `add_event_from_pipeline` so alerting stays deterministic like the rest of the event engine |
+| Agent state-changing actions + the propose/approve gate (Section 13, added in Phase 12) | `[IMPLEMENTED]` | `src/agent/actions.py` | `propose_create_alert`, `propose_configure_zone`, `propose_configure_line`, `propose_generate_report`, `propose_send_notification` (validate + record a `PendingAction` only, never mutate); `execute_pending_action()` (the only function that actually mutates, reachable only from `POST /agent/actions/{id}/approve`, never from an agent tool) |
+| Action tools registered with the agent (Section 12, Section 13, added in Phase 12) | `[IMPLEMENTED]` | `src/agent/tools.py` | The 5 `propose_*` functions added to `TOOL_SPECS` alongside Section 12's 7 read-only tools (12 total) |
+| `POST /alerts`, `GET /cameras/{id}/alerts` (Section 10, Section 13, added in Phase 12) | `[IMPLEMENTED]` | `src/api/routers/alerts.py`, `src/api/routers/cameras.py` | Direct alert creation (bypasses the agent gate — a real API call is already a confirmed action) and the "dashboard/API" delivery channel (an alert is "delivered" by being queryable here) |
+| `GET /agent/actions/{id}`, `POST /agent/actions/{id}/approve` (Section 10, Section 13, added in Phase 12) | `[IMPLEMENTED]` | `src/api/routers/agent.py`, `src/api/deps.py` | The real, code-level approval gate's only entry point; `409` if the action isn't still `"pending"` |
+| Agent actions + alerts test coverage (Section 13, Section 16, added in Phase 12) | `[IMPLEMENTED]` | `tests/test_agent_actions.py`, `tests/test_api.py` | 15 tests confirming every `propose_*` leaves the database unchanged and `execute_pending_action` mutates exactly once (not on a second call), plus the OVERSPEED→`Alert` end-to-end path and a non-triggering-type negative case; 9 new API tests including the full HTTP propose→verify-empty→approve→verify-created flow and the `409`-on-double-approval case, also verified manually against a real running `uvicorn` instance. 215 tests total in `tests/`, all passing |
 
 ### What I should know
 - [ ] I can explain why the API sits between the pipeline/database and every consumer (dashboard, agent).
@@ -1058,6 +1158,7 @@ Wired in `src/api/routers/agent.py`: `{"question": str}` in, `{"answer": str, "t
 - [ ] I can explain the API → service → repository layering and why route handlers shouldn't contain SQL.
 - [ ] I can explain why the Vision Agent's tools return real data and never let the LLM compute the answer itself.
 - [ ] I can explain what "grounding" means here and how it's enforced both in the system prompt and in how the agent loop is tested.
+- [ ] I can explain why `execute_pending_action` is reachable only from a REST endpoint and never from an agent tool.
 
 ### Questions to test myself
 1. Why should `POST /zones` validate polygon geometry at the API boundary rather than deep inside the event engine?

@@ -1,0 +1,35 @@
+# Phase 13 fine-tuning hyperparameters -- read by training/train.py, not
+# hardcoded there, so a run is reproducible from this file (plus
+# dataset.yaml and the base weights named below) alone.
+
+base_weights: yolov8n.pt   # the exact pretrained baseline this fine-tune starts from and is compared against
+
+epochs: 3        # CPU-only environment (no CUDA available here) on a ~100-image
+                 # dataset -- a portfolio-scale budget, not a production training
+                 # run. See TRACE_STUDY_GUIDE.md Section 13 for the real
+                 # before/after numbers this produced.
+imgsz: 640       # Ultralytics' own YOLOv8 default
+batch: 8         # small dataset, small batch -- no reason to go bigger
+lr0: 0.001       # smaller than YOLO's from-scratch default (0.01): fine-tuning
+                 # nudges an already-good pretrained model, it shouldn't overwrite
+                 # its existing weights aggressively
+optimizer: auto
+patience: 0      # fixed epoch count, no early-stopping patience needed
+seed: 0          # Ultralytics' own reproducibility seed for its internal
+                 # (weight init / dataloader shuffling) randomness -- this repo's
+                 # own train/val SPLIT is separately deterministic (prepare_dataset.py),
+                 # this only covers what Ultralytics itself randomizes during training
+
+# Augmentation, named explicitly (not left as implicit defaults) so the run
+# is reproducible from this file alone.
+augmentation:
+  mosaic: 0.0    # disabled: mosaic composites 4 images into one, which on ~100
+                 # images mostly just recombines the same handful of scenes --
+                 # more likely to hurt than help at this scale
+  hsv_h: 0.015   # Ultralytics' own defaults for the rest
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  fliplr: 0.5

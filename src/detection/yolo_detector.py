@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import cv2
 
 from detection.detector import Detection, Detector
@@ -9,13 +11,28 @@ from detection.frame_source import Frame
 
 DEFAULT_CLASS_ALLOWLIST = ("person", "car", "motorcycle", "bus", "truck", "bicycle")
 
+# Which weights the live pipeline loads when model_path isn't given
+# explicitly -- Phase 13 fine-tuned YOLOv8n on a small, real, held-out COCO128
+# split (training/) and measured it against this exact pretrained baseline
+# before choosing which one is the default; see TRACE_STUDY_GUIDE.md Section
+# 2/13 for the real precision/recall/mAP numbers behind this choice, not just
+# the choice itself. Overridable per-process via TRACE_DETECTOR_WEIGHTS
+# without a code change (e.g. to switch back to the pretrained baseline, or
+# to point at a newer fine-tune) -- explicit and configurable, per Phase 13's
+# requirement.
+DEFAULT_MODEL_PATH = os.environ.get("TRACE_DETECTOR_WEIGHTS", "yolov8n.pt")
+
 
 class YoloDetector(Detector):
-    """Pretrained YOLO (Ultralytics) behind the Detector interface. Inference only — no training.
+    """Pretrained YOLO (Ultralytics) behind the Detector interface. Inference only — no training
+    (training/ is a separate, offline fine-tuning pipeline -- Section 13 -- that produces the
+    weights this class can be pointed at; it never trains at runtime).
 
-    `model_path` names any Ultralytics-compatible weights file (defaults to
-    the smallest/fastest COCO-pretrained model, `yolov8n.pt`); Ultralytics
-    downloads it automatically on first use if not already cached locally.
+    `model_path` names any Ultralytics-compatible weights file, defaulting to
+    `DEFAULT_MODEL_PATH` above; Ultralytics downloads a named pretrained
+    model automatically on first use if not already cached locally (a
+    fine-tuned path, e.g. `models/yolov8n_trace_finetuned.pt`, must already
+    exist on disk -- see training/export_weights.py).
 
     `class_allowlist=None` disables filtering (every COCO class is kept);
     pass an explicit iterable to restrict to those class names.
@@ -23,7 +40,7 @@ class YoloDetector(Detector):
 
     def __init__(
         self,
-        model_path: str = "yolov8n.pt",
+        model_path: str = DEFAULT_MODEL_PATH,
         confidence_threshold: float = 0.25,
         class_allowlist: "tuple[str, ...] | None" = DEFAULT_CLASS_ALLOWLIST,
         device: str | None = None,

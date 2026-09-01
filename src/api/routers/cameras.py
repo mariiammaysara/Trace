@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from api.common import get_camera_or_404
 from api.deps import get_db
-from api.schemas import CameraCreate, CameraRead, EventRead, LineRead, TrackedObjectRead, ZoneRead
+from api.schemas import AlertRead, CameraCreate, CameraRead, EventRead, LineRead, TrackedObjectRead, ZoneRead
 from database import repository
 
 router = APIRouter(tags=["cameras"])
@@ -78,4 +78,23 @@ def list_camera_events(
             line_id=event.line.line_id if event.line is not None else None,
         )
         for event in events
+    ]
+
+
+@router.get("/cameras/{camera_id}/alerts", response_model=List[AlertRead])
+def list_camera_alerts(camera_id: str, session: Session = Depends(get_db)) -> List[AlertRead]:
+    """Section 13's "dashboard/API" delivery channel: an alert is "delivered"
+    by existing here, queryable -- this is what a dashboard would poll."""
+    camera = get_camera_or_404(session, camera_id)
+    return [
+        AlertRead(
+            id=alert.id,
+            camera_id=camera_id,
+            event_id=alert.event_id,
+            event_type=alert.event_type,
+            message=alert.message,
+            channel=alert.channel,
+            created_at=alert.created_at,
+        )
+        for alert in repository.list_alerts_for_camera(session, camera)
     ]

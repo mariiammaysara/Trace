@@ -102,6 +102,28 @@ def test_invalid_confidence_threshold_raises():
         YoloDetector(model_path="fake.pt", confidence_threshold=1.5)
 
 
+def test_default_model_path_reads_trace_detector_weights_env_var(monkeypatch):
+    # DEFAULT_MODEL_PATH (Phase 13's "explicit and configurable which
+    # weights" requirement) is a module-level constant read once at import
+    # time, which YoloDetector.__init__'s `model_path` parameter default is
+    # bound to -- also at import time (Python evaluates parameter defaults
+    # once, at def-time, not per-call). So actually exercising the env-var
+    # override requires reloading the module, not just monkeypatching the
+    # already-imported attribute.
+    import importlib
+
+    import detection.yolo_detector as yolo_detector_module
+
+    monkeypatch.setenv("TRACE_DETECTOR_WEIGHTS", "models/custom_finetune.pt")
+    try:
+        importlib.reload(yolo_detector_module)
+        assert yolo_detector_module.DEFAULT_MODEL_PATH == "models/custom_finetune.pt"
+    finally:
+        monkeypatch.delenv("TRACE_DETECTOR_WEIGHTS", raising=False)
+        importlib.reload(yolo_detector_module)  # restore the real default for every other test in this file
+        assert yolo_detector_module.DEFAULT_MODEL_PATH == "yolov8n.pt"
+
+
 # --- integration: real model, real fixture frames, structure-only assertions ---
 
 

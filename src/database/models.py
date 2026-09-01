@@ -168,3 +168,64 @@ class Event(Base):
     camera: Mapped["Camera"] = relationship()
     zone: Mapped[Optional["Zone"]] = relationship(back_populates="events")
     line: Mapped[Optional["Line"]] = relationship(back_populates="events")
+
+
+class Alert(Base):
+    """One delivered/triggered alert -- Section 13's real-time alerting.
+
+    Created two ways, both going through repository.create_alert(): (1)
+    automatically, synchronously, whenever add_event_from_pipeline() persists
+    an event whose type is in alerts.rules.ALERT_TRIGGERING_EVENT_TYPES
+    (event_id is set); (2) by the Vision Agent's create_alert/send_notification
+    actions, only after a human approves the pending action that proposed it
+    (Section 13) -- event_id is None for these, since they aren't tied to one
+    specific persisted event.
+
+    channel is the delivery channel this alert was recorded for -- "dashboard"
+    (the dashboard/API polling GET /alerts, satisfying Section 13's "dashboard/
+    API at minimum" delivery-channel requirement) or "api". Telegram is
+    documented as [OPTIONAL] and was NOT implemented this phase (confirmed
+    with the user before proceeding).
+    """
+
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id"), nullable=False, index=True)
+    event_id: Mapped[Optional[int]] = mapped_column(ForeignKey("events.id"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    message: Mapped[str] = mapped_column(String, nullable=False)
+    channel: Mapped[str] = mapped_column(String, nullable=False, default="dashboard")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=dt.datetime.utcnow)
+
+    camera: Mapped["Camera"] = relationship()
+    event: Mapped[Optional["Event"]] = relationship()
+
+
+class PendingAction(Base):
+    """The real, code-level approval gate for the Vision Agent's
+    state-changing tools (Section 13) -- create_alert, configure_zone,
+    configure_line, generate_report, send_notification.
+
+    Every one of those tools, when the agent calls it, ONLY inserts a row
+    here (status="pending") after validating its parameters -- it never
+    touches cameras/zones/lines/alerts directly (src/agent/actions.py's
+    propose_*() functions). The action only actually executes when
+    execute_pending_action() runs against this row, which is reachable ONLY
+    from POST /agent/actions/{id}/approve (api/routers/agent.py) -- there is
+    no agent TOOL that can approve a pending action. That's deliberate: if
+    approval were itself just another tool, a single conversation turn could
+    call propose-then-approve back to back with no real human step in
+    between, defeating the point of an approval gate.
+    """
+
+    __tablename__ = "pending_actions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    parameters: Mapped[dict] = mapped_column(JSON, nullable=False)
+    summary: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending", index=True)  # pending | executed
+    result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=dt.datetime.utcnow)
+    executed_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
