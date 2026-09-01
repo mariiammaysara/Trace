@@ -1,0 +1,25 @@
+# Stage 2's dataset config -- 30 frames from data/sample.mp4 (every 8th
+# frame of the real ~16s/244-frame/15fps webcam clip), labeled via
+# apply_review.py's real, human-confirmed correction (see that script's
+# docstring for the full review record). 24 train / 6 val, split
+# deterministically by frame order (training/stage2/apply_review.py).
+#
+# Same 6 classes as Stage 1, in the same order -- NOT narrowed to
+# person-only, even though every label in this dataset is "person" (the
+# clip is confirmed person-only by the user). Keeping the full 6-class head
+# means Stage 2 is a real continuation of Stage 1's model, not a different
+# architecture; it also means this dataset provides zero additional
+# training signal for car/motorcycle/bus/truck/bicycle, and continuing to
+# train on person-only data is a real risk of pushing those classes' already-
+# collapsed weights (Section 2) even further toward zero -- whether that's
+# what happened is answered by evaluate.py's real 3-way comparison.
+train: ../data/stage2/split/train.txt
+val: ../data/stage2/split/val.txt
+
+names:
+  0: person
+  1: car
+  2: motorcycle
+  3: bus
+  4: truck
+  5: bicycle

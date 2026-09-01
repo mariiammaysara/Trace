@@ -1,0 +1,30 @@
+# Stage 1 fine-tuning hyperparameters -- read by stage1/train.py, never
+# hardcoded there, so this run is reproducible from this file (plus
+# dataset.yaml and base_weights) alone.
+
+base_weights: yolov8n.pt   # pretrained baseline this stage starts from AND is compared against
+
+epochs: 5        # bumped from the original single-stage run's 3: narrowing to 6
+                  # classes (from COCO's 80) makes Ultralytics reinitialize the
+                  # detection head's output layer, which needs a bit more time to
+                  # converge than nudging an already-matching head. Still a
+                  # portfolio-scale budget (CPU-only, no CUDA available here).
+imgsz: 640        # Ultralytics' own YOLOv8 default
+batch: 8          # small dataset, small batch
+lr0: 0.001        # smaller than YOLO's from-scratch default (0.01) -- the backbone
+                  # is still pretrained, only the head is reinitializing
+optimizer: auto
+patience: 0       # fixed epoch count, no early-stopping patience needed
+seed: 0           # Ultralytics' own reproducibility seed; this repo's train/val
+                  # SPLIT is separately deterministic (prepare_dataset.py)
+
+augmentation:
+  mosaic: 0.0     # disabled: on ~100 images mosaic mostly recombines the same
+                  # handful of scenes -- more likely to hurt than help at this scale
+  hsv_h: 0.015    # Ultralytics' own defaults for the rest
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  fliplr: 0.5

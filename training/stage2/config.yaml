@@ -1,0 +1,30 @@
+# Stage 2 fine-tuning hyperparameters -- read by stage2/train.py, never
+# hardcoded there, so this run is reproducible from this file (plus
+# dataset.yaml and base_weights) alone.
+
+base_weights: ../../models/yolov8n_trace_stage1.pt   # continues from Stage 1's checkpoint, not raw yolov8n.pt --
+                                                        # this IS the domain-adaptation step, not a fresh fine-tune
+
+epochs: 3         # only 24 train images, all near-duplicate frames of one static
+                  # scene (Section 2) -- more epochs would mean memorizing this
+                  # one scene harder, not learning anything more general
+imgsz: 640
+batch: 4          # 24 images total; a batch of 8 (Stage 1's setting) would be a
+                  # third of the whole training set in one step
+lr0: 0.0005       # smaller than Stage 1's 0.001 -- this is a small delta
+                  # adaptation on top of an already-fine-tuned checkpoint, not a
+                  # class-space change requiring a bigger update
+optimizer: auto
+patience: 0
+seed: 0
+
+augmentation:
+  mosaic: 0.0     # still disabled -- 24 near-identical images would just recombine
+                  # the same scene with itself
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  fliplr: 0.5

@@ -12,27 +12,33 @@ from detection.frame_source import Frame
 DEFAULT_CLASS_ALLOWLIST = ("person", "car", "motorcycle", "bus", "truck", "bicycle")
 
 # Which weights the live pipeline loads when model_path isn't given
-# explicitly -- Phase 13 fine-tuned YOLOv8n on a small, real, held-out COCO128
-# split (training/) and measured it against this exact pretrained baseline
-# before choosing which one is the default; see TRACE_STUDY_GUIDE.md Section
-# 2/13 for the real precision/recall/mAP numbers behind this choice, not just
-# the choice itself. Overridable per-process via TRACE_DETECTOR_WEIGHTS
-# without a code change (e.g. to switch back to the pretrained baseline, or
-# to point at a newer fine-tune) -- explicit and configurable, per Phase 13's
-# requirement.
+# explicitly. Phase 13 built a real two-stage fine-tune (training/) -- Stage 1
+# narrows yolov8n to TRACE's 6 classes on a COCO128 subset, Stage 2 further
+# adapts Stage 1 on real footage -- and measured both against this exact
+# pretrained baseline on two separate held-out sets before choosing. Result:
+# Stage 1 collapsed (precision cratered to ~0.003-0.005, 5/6 classes hit
+# exactly zero mAP on held-out COCO images); Stage 2 partially recovered
+# localization quality on the ONE real scene it adapted to but never fixed
+# the inherited precision collapse. The plain pretrained baseline stayed
+# reliable across the board on every held-out set tested. Neither fine-tuned
+# stage is the default as a result -- see TRACE_STUDY_GUIDE.md Section 2 for
+# the full real numbers and reasoning, not just the choice. Overridable
+# per-process via TRACE_DETECTOR_WEIGHTS without a code change (e.g. to try
+# models/yolov8n_trace_stage1.pt or _stage2.pt anyway, or point at a future,
+# better fine-tune) -- explicit and configurable, per Phase 13's requirement.
 DEFAULT_MODEL_PATH = os.environ.get("TRACE_DETECTOR_WEIGHTS", "yolov8n.pt")
 
 
 class YoloDetector(Detector):
     """Pretrained YOLO (Ultralytics) behind the Detector interface. Inference only — no training
-    (training/ is a separate, offline fine-tuning pipeline -- Section 13 -- that produces the
-    weights this class can be pointed at; it never trains at runtime).
+    (training/ is a separate, offline fine-tuning pipeline -- Section 2's fine-tuning subsection --
+    that produces the weights this class can be pointed at; it never trains at runtime).
 
     `model_path` names any Ultralytics-compatible weights file, defaulting to
     `DEFAULT_MODEL_PATH` above; Ultralytics downloads a named pretrained
     model automatically on first use if not already cached locally (a
-    fine-tuned path, e.g. `models/yolov8n_trace_finetuned.pt`, must already
-    exist on disk -- see training/export_weights.py).
+    fine-tuned path, e.g. `models/yolov8n_trace_stage1.pt` or `_stage2.pt`,
+    must already exist on disk -- see training/export_weights.py).
 
     `class_allowlist=None` disables filtering (every COCO class is kept);
     pass an explicit iterable to restrict to those class names.
