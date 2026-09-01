@@ -1,0 +1,40 @@
+{
+  "model_path": "models/yolov8n.onnx",
+  "source_video": "C:\\Users\\ahmed\\Desktop\\Trace\\data\\sample.mp4",
+  "frames_processed": 244,
+  "warmup_frames": 10,
+  "detection_fps": 1.221471486552814,
+  "tracking_fps": 165.90163796886756,
+  "end_to_end_fps": 1.2015147029032247,
+  "detection_latency": {
+    "count": 244,
+    "mean_ms": 818.6846856508771,
+    "median_ms": 809.1935500269756,
+    "p95_ms": 957.4949000962079,
+    "min_ms": 653.095600195229,
+    "max_ms": 1152.8870998881757
+  },
+  "tracking_latency": {
+    "count": 244,
+    "mean_ms": 6.027668034161639,
+    "median_ms": 6.039599888026714,
+    "p95_ms": 7.98470014706254,
+    "min_ms": 1.211599912494421,
+    "max_ms": 90.2766000945121
+  },
+  "end_to_end_latency": {
+    "count": 244,
+    "mean_ms": 831.7878520579962,
+    "median_ms": 818.7112498562783,
+    "p95_ms": 976.1270000599325,
+    "min_ms": 660.3619998786598,
+    "max_ms": 1231.4146000426263
+  },
+  "cpu_percent_process": 316.4,
+  "wall_elapsed_seconds": 203.07699890015647,
+  "gpu_memory": {
+    "measured": false,
+    "reason": "torch.cuda.is_available() is False (installed PyTorch is 2.13.0+cpu, a CPU-only build) -- no CUDA device for this process to allocate GPU memory on",
+    "physical_gpu_detected": "NVIDIA GeForce RTX 4050 Laptop GPU"
+  }
+}

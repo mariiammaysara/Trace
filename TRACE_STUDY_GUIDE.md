@@ -238,11 +238,11 @@ TRACE needs **detection**: it must localize multiple objects per frame, not just
 - Training: the model learns weights from labeled data (gradient descent, backprop) — TRACE does **not** train a detector from scratch by default; it uses a pretrained model and may fine-tune later if needed.
 - Inference: running the already-trained model forward on new frames — this is the only thing the real-time pipeline does.
 
-### Why we choose our detector for TRACE `[IMPLEMENTED — provisional, pending benchmarking, Section 20]`
+### Why we choose our detector for TRACE `[IMPLEMENTED — provisional; FPS/latency now benchmarked in Section 20, but only for this model against itself across backends, not yet against RT-DETR/larger YOLO variants]`
 
-- **Chosen for now: YOLOv8n (Ultralytics, COCO-pretrained, `yolov8n.pt`)** — the nano variant, for the same reasons Section 2 always named as the default candidate: tooling maturity, speed, ease of export to ONNX/TensorRT later (Section 14), and it needed zero training to get a working Phase 2 pipeline end-to-end.
-- **This is a provisional pick, not a final one.** It has not been benchmarked against RT-DETR or larger YOLO variants (s/m/l) on real TRACE-like scenes — that comparison is still `[PLANNED]` for Section 20. Nano was chosen purely to get inference working fast; a real FPS/accuracy benchmarking phase, not yet built, is where that comparison actually happens.
-- RT-DETR remains the documented alternative to benchmark against once real accuracy/FPS numbers are needed.
+- **Chosen for now: YOLOv8n (Ultralytics, COCO-pretrained, `yolov8n.pt`)** — the nano variant, for the same reasons Section 2 always named as the default candidate: tooling maturity, speed, ease of export to ONNX/TensorRT later (Section 14, now `[IMPLEMENTED]` — ONNX export is real and measured; TensorRT was not exercisable on this hardware, see Section 20 Experiment 2), and it needed zero training to get a working Phase 2 pipeline end-to-end.
+- **Still a provisional pick, in one specific sense.** Section 20 now has real, measured FPS/latency numbers for this exact model across PyTorch and ONNX backends (5.72 vs. 1.20 end-to-end FPS on this machine — PyTorch stays faster here) — but it has **not** been benchmarked against RT-DETR or larger YOLO variants (s/m/l) on real TRACE-like scenes; that comparison remains `[PLANNED]`. Nano was chosen purely to get inference working fast; Phase 15 measured *this* model's own real-world speed, not whether a different model would do better.
+- RT-DETR remains the documented alternative to benchmark against once that specific comparison is built.
 
 ### Fine-tuning: a real, two-stage before/after `[IMPLEMENTED — Phase 12's revised training spec, superseding an earlier single-stage attempt]`
 
@@ -381,13 +381,13 @@ TRACE's default candidates are **ByteTrack** and **BoT-SORT** specifically becau
 - **MOTA (Multi-Object Tracking Accuracy)** — combines false positives, missed detections (misses), and ID switches into one score; heavily influenced by detection quality, not just tracking quality.
 - **IDF1** — measures how well predicted IDs match ground-truth identities over the *whole* track lifetime (harmonic mean of ID-precision and ID-recall) — more sensitive specifically to identity consistency than MOTA.
 - **Why both:** MOTA can look fine even with several ID switches if detection is otherwise strong; IDF1 exposes identity-consistency problems that matter most for TRACE's "same object over time" use cases (dwell time, unique counts).
-- **`[PLANNED]` — not computed yet.** MOTA/IDF1 both require ground-truth tracking annotations (which real object each track_id *should* be, frame by frame) that TRACE does not have yet. Phase 3 testing checked only qualitative ID stability on synthetic sequences and one real clip (see Observed limitations below), never a numeric MOTA/IDF1 score. Computing these for real is explicitly deferred to the evaluation phase (Section 15) once an annotated tracking dataset exists — no numbers are faked or estimated here in the meantime.
+- **`[IMPLEMENTED]` — Phase 14, Section 15.** Real numbers now exist: MOTA=1.000, IDF1=1.000, 0 ID switches for the pretrained-detector pipeline on a 244-frame hand-annotated real clip, plus a synthetic 2-object crossing scenario (also 0 switches). Phase 13's fine-tuned detectors (Stage 1/2) scored a flat 0.0 MOTA/IDF1 on the same real clip — a complete tracking failure, not just a worse number. See Section 15 for the ground-truth methodology, the real compatibility bug fixed to compute this, and the honest scope limits (one real clip, one object, can't test ID switches on its own — the synthetic scenario exists specifically to cover that gap).
 
-### Why we choose our tracker for TRACE `[IMPLEMENTED — provisional, pending benchmarking, Section 20]`
+### Why we choose our tracker for TRACE `[IMPLEMENTED — provisional; real tracking-FPS numbers now exist in Section 20 (as a side effect of the detector-backend benchmark), but ByteTrack itself hasn't been benchmarked against BoT-SORT]`
 
 - **Chosen for now: ByteTrack**, over BoT-SORT, because this phase's target scene (a mostly-static single camera, no significant camera motion) doesn't need BoT-SORT's extra machinery (camera-motion compensation, optional appearance/ReID embedding) — ByteTrack's plain motion (Kalman) + IoU + Hungarian matching, plus its core trick of giving low-confidence detections a second chance instead of discarding them, is the simpler tool that already fits. Revisit if/when TRACE needs to handle real camera motion or heavier occlusion.
 - **Build vs. reuse:** implemented by wrapping `ultralytics.trackers.byte_tracker.BYTETracker` — the same, already-battle-tested implementation that backs `model.track()` everywhere Ultralytics is used — rather than writing our own Kalman filter and Hungarian-algorithm matching from scratch. This was a deliberate trade-off, decided explicitly rather than defaulted into: a from-scratch implementation would have real learning/portfolio value (Section 3 is TRACE's technical core, and its own self-check list below expects genuine understanding of the Kalman predict→correct cycle and why Hungarian beats greedy matching), but a hand-rolled tracker is also meaningfully more code and more surface area for the exact subtle bugs (ID switches, track drift) a mature library has already had years to shake out. Reuse won for Phase 3; understanding what's inside `BYTETracker` remains a "should be able to explain this" goal regardless of who wrote the code running it.
-- This is a provisional pick like the detector choice in Section 2 — not yet benchmarked (MOTA/IDF1, real occlusion-heavy footage) against BoT-SORT or a from-scratch implementation. That comparison is `[PLANNED]` for Section 20.
+- **Real speed data now exists, incidentally**: Section 20's Experiment 1 measured `ByteTracker.update()` alone at 739 FPS (PyTorch run) / 166 FPS (ONNX run) on this machine — tracking was never close to the bottleneck in either run; detection dominates end-to-end latency by roughly two orders of magnitude. This wasn't a dedicated tracker benchmark, though — no MOTA/IDF1-vs-speed trade-off comparison against BoT-SORT or a from-scratch implementation exists yet. That comparison remains `[PLANNED]`.
 
 ### Where this is implemented `[IMPLEMENTED]`
 
@@ -750,7 +750,7 @@ Writing `Event` records to a database (`src/database/`, Section 9) is Phase 8, n
 | Processing FPS | How fast TRACE's pipeline can consume and fully process frames on the current hardware |
 | End-to-end latency | Wall-clock time from a real-world event happening to TRACE producing/storing the corresponding event record |
 
-If processing FPS < video FPS on a live feed, TRACE must either drop frames (frame skipping) or fall permanently behind — this is a real, must-be-measured constraint (Section 14/16), not an implementation detail to gloss over.
+If processing FPS < video FPS on a live feed, TRACE must either drop frames (frame skipping) or fall permanently behind — this is a real, measured constraint, not an implementation detail to gloss over. **Now actually measured, Phase 15**: `data/sample.mp4`'s native rate is 15 FPS; the real pipeline's measured end-to-end processing FPS on this machine is 5.72 (PyTorch) / 1.20 (ONNX CPU) — meaning on *this* hardware, TRACE currently falls behind a 15 FPS live feed under either backend tested. See Section 14 and Section 20 for the full methodology and numbers.
 
 ### What I should know
 - [ ] I can explain why VideoCapture unifies file and camera input.
@@ -1040,7 +1040,145 @@ Unlike `create_alert`/`configure_zone`/`configure_line`/`send_notification`, gen
 2. If a future event type needed to trigger an alert, what's the exact one-line change, and why doesn't it touch the agent at all?
 3. Why does `POST /alerts` bypass the propose/approve gate while the agent's `create_alert` tool doesn't, even though both end up calling the same `repository.create_alert()`?
 
-> **Note:** Sections 14–18, 20, and 21 (listed in the Table of Contents) have not been written yet — only Sections 0–13 exist above this point, plus Section 19 (Implementation Map), added here ahead of the sections it numerically follows so completed work has somewhere to be recorded. Fill in 14–18/20/21 as those phases are planned; renumber/reorder at that point if needed.
+## 14. Production Computer Vision
+
+*Added in Phase 15. Section 2 and Section 3 both flagged their detector/tracker picks as provisional, "pending benchmarking, Section 20" — this phase is what that benchmarking actually is. Section 8 also flagged "processing FPS < video FPS" as "a real, must-be-measured constraint (Section 14/16)" — the measurement below is what that constraint looks like with real numbers behind it.*
+
+### "It runs" is not "it's production-ready"
+
+Every prior phase validated TRACE's pipeline functionally — does `YoloDetector` return well-formed detections, does `ByteTracker` hold a stable id, does the event engine fire the right event. None of that says anything about whether the pipeline can keep up with a live camera feed on real hardware. Section 8 already named the gap precisely: if **processing FPS** falls below **video FPS** on a live source, TRACE must either drop frames (frame skipping) or fall permanently, unrecoverably behind. This phase is the first to actually measure processing FPS against something, instead of leaving it as an abstract concern.
+
+### Model export formats: PyTorch, ONNX, TensorRT
+
+- **PyTorch (`.pt`)** — the native format every prior phase has used. `YoloDetector` just calls `ultralytics.YOLO(model_path)`, and Ultralytics dispatches on file extension internally (its `AutoBackend`) — nothing in `src/` is PyTorch-specific by construction.
+- **ONNX (`.onnx`, Open Neural Network Exchange)** — a portable, framework-independent graph format. Exporting to it decouples the trained model from PyTorch itself, and its stated appeal is that a runtime built specifically for inference (ONNX Runtime) can apply graph-level optimizations a general-purpose training framework doesn't. Whether that appeal holds *on a given machine, for a given model* is an empirical question, not something to assume — see Section 20's Experiment 1 for what actually happened here.
+- **TensorRT (`.engine`)** — NVIDIA's own inference runtime, which compiles a model into a hardware-specific optimized engine (kernel fusion, precision calibration, engine tuned to the exact GPU it's built on). It requires an NVIDIA GPU, the `tensorrt` package, and — for Ultralytics' export path specifically — a CUDA-enabled PyTorch build to run the ONNX→TensorRT build step on-device. See Section 20's Experiment 2 for why this could not be exercised on this machine, and exactly what was checked before concluding that.
+
+### GPU hardware vs. software stack — a real distinction found on this machine `[IMPLEMENTED]`
+
+Two genuinely different facts, and this phase's benchmarking work required not conflating them:
+
+1. **Is a physical GPU present?** Answered by `nvidia-smi`, which talks to the NVIDIA driver directly — true regardless of what any particular Python environment has installed.
+2. **Can *this process's* installed PyTorch build actually use CUDA?** Answered by `torch.cuda.is_available()` — a fact about the installed wheel (`torch==2.13.0+cpu` here is a CPU-only build with no CUDA support compiled in), not about the hardware.
+
+On this machine these two disagree: `nvidia-smi` reports a real **NVIDIA GeForce RTX 4050 Laptop GPU** (driver 595.79, CUDA 13.2 supported by the driver), but `torch.cuda.is_available()` is `False`. Reporting this as "no GPU available" would be false and would misdirect anyone reading this later — the accurate statement is "GPU hardware present, current software stack is CPU-only." `benchmarks/gpu_support.py` checks both facts independently and keeps them separate in its output for exactly this reason, rather than collapsing them into one boolean.
+
+Installing a CUDA-enabled PyTorch build (plus the `tensorrt` package) would resolve this and let GPU/TensorRT actually be benchmarked — but this was a deliberate choice **not** made unilaterally in this phase: it's a large (~2GB+), disruptive reinstall of the exact dependency every other part of TRACE's pipeline (detection, tracking, training) already runs on, with real risk of version friction against `ultralytics`'/`opencv`'s own pins. This was surfaced to the user explicitly before benchmarking began, and the CPU-only scope was the confirmed choice — not a silent limitation discovered after the fact.
+
+### What TRACE actually measures, and why (Section 20 has the real numbers)
+
+`benchmarks/benchmark.py` runs the real pipeline (`FrameSource` → `YoloDetector` → `ByteTracker`, unmodified — not a stripped-down measurement harness) against `data/sample.mp4` and records:
+
+- **Detection FPS / latency** — `YoloDetector.detect()` alone, isolated from tracking.
+- **Tracking FPS / latency** — `ByteTracker.update()` alone.
+- **End-to-end FPS / latency** — the full per-frame loop (`FrameSource.read()` → detect → track), which is the number that actually answers Section 8's "can this keep up with the video" question.
+- **CPU usage** — process-level, via `psutil`.
+- **GPU memory** — real `torch.cuda` stats when a CUDA-enabled PyTorch build with a device is running; an explicit, reasoned "not measured" otherwise (never a fabricated number).
+
+A fixed number of warmup frames (10, by default) run before any frame is timed, so first-call cold-start cost (backend session/graph construction, allocator warm-up) doesn't bleed into the measured, steady-state numbers.
+
+**A deliberate design choice, not an oversight**: the ONNX backend needed no separate detector code. Ultralytics' `YOLO(model_path)` dispatches on file extension via its own `AutoBackend`, so `YoloDetector(model_path="yolov8n.onnx")` runs through the *exact same* `src/detection/yolo_detector.py` code every other phase already uses and tests — `benchmarks/benchmark.py` just points `--model` at a different file. This is the same "swappable interface, model choice stays out of downstream code" design Section 2 committed to from the start; Phase 15 is the first phase that actually exercises it with a second real backend.
+
+### Where this is implemented `[IMPLEMENTED]`
+
+- `benchmarks/gpu_support.py` — `nvidia_smi_gpu_name()`, `torch_cuda_status()`, `tensorrt_availability()`, `gpu_memory_status()`: real, independent capability checks (not a hardcoded skip) used by both the benchmark harness (GPU-memory metric) and the TensorRT export script (skip logic).
+- `benchmarks/export_onnx.py` — exports `yolov8n.pt` to ONNX via Ultralytics' own `model.export(format="onnx")`; writes to `models/yolov8n.onnx` (gitignored, like every other weights file per the existing `*.onnx` rule).
+- `benchmarks/export_tensorrt.py` — attempts the same for `format="engine"`, but only if `tensorrt_availability()["supported"]` is `True`; otherwise skips with the specific real reason(s) and writes `benchmarks/results/tensorrt_export_status.json` recording the actual check outcome.
+- `benchmarks/benchmark.py` — `run_benchmark(model_path, source_video, warmup_frames, max_frames)`, the core harness described above; CLI writes `benchmarks/results/<label>.{json,txt}`.
+- `tests/test_benchmarks.py` — confirms the harness runs end-to-end (on the tiny synthetic fixture video, capped at 3 frames) and produces well-formed metrics and results files; deliberately asserts *shape*, never specific FPS/latency numbers, since those are hardware-dependent by nature. Also confirms `tensorrt_availability()`'s output is internally consistent regardless of which way the real check comes out on a given machine.
+- Real measured results: `benchmarks/results/pytorch_pretrained.{json,txt}`, `benchmarks/results/onnx_pretrained.{json,txt}`, `benchmarks/results/tensorrt_export_status.json` — checked in as real evidence, same convention as `training/results/` and `evaluation/results/`.
+
+### What I should know
+- [ ] I can explain the difference between "a GPU is present" and "this process can use CUDA," and why this machine's real answer differs between the two.
+- [ ] I can explain why ONNX export needed zero new detector code in `src/`.
+- [ ] I can explain why warmup frames are excluded from the measured numbers.
+- [ ] I can explain, using this phase's real numbers, what Section 8's "processing FPS < video FPS" constraint concretely means for `data/sample.mp4` (15 FPS native).
+
+### Questions to test myself
+1. Why is "no GPU available" the wrong way to describe this machine's real situation?
+2. What would have to change in this environment (not in the code) to actually benchmark TensorRT here?
+3. Why does the benchmark harness call the real `YoloDetector`/`ByteTracker` instead of writing separate timing code around the raw model?
+4. If end-to-end FPS on this machine is below `data/sample.mp4`'s native 15 FPS, what are TRACE's actual options on a live 15 FPS feed, per Section 8?
+
+---
+
+## 15. Evaluation
+
+*Added in Phase 14. Section 3 (Multi-Object Tracking) originally left MOTA/IDF1 `[PLANNED]` here, explicitly, because Phase 3's tracker was built and tested without any ground-truth tracking annotations — this phase closes that gap for real, not just formally.*
+
+**Scope note, added in Phase 15**: everything in this section measures *accuracy* — is the box right, is the id right. It says nothing about *speed* — whether the pipeline can keep up with a live feed. That's a genuinely separate question, answered in Section 14 (Production Computer Vision) and Section 20 (Experiments) with real detection/tracking/end-to-end FPS numbers. A model can score perfectly here (as the pretrained detector does, MOTA=1.0/IDF1=1.0 below) and still be too slow for real-time use, or vice versa — accuracy and performance evaluation are kept separate deliberately, not because one is more important.
+
+### Detection evaluation — reused directly from Phase 13, not reimplemented `[IMPLEMENTED]`
+
+Section 15's detection requirement (precision/recall/mAP50/mAP50-95 on a held-out split) is exactly what `training/evaluate.py` (Phase 13) already computes. `evaluation/detection/evaluate.py` calls that module's `build_coco_holdout_comparison()`/`build_real_footage_holdout_comparison()` directly rather than duplicating the logic, and archives the result as this phase's own evaluation artifact (`evaluation/results/detection_comparison.{json,txt}`). Real numbers (identical to Phase 13's, since it's the same code and data — reproducibility, not new results):
+
+*COCO_HOLDOUT (pretrained vs. Stage 1, 29 held-out COCO128 images, 6 classes)*:
+
+| class | pretrained mAP50 | stage1 mAP50 | pretrained P/R | stage1 P/R |
+|---|---|---|---|---|
+| person | 0.744 | 0.340 | 0.723 / 0.707 | 0.005 / 0.810 |
+| car | 0.406 | 0.000 | 0.461 / 0.316 | 0.000 / 0.000 |
+| motorcycle | 0.995 | 0.000 | 1.000 / 0.973 | 0.000 / 0.000 |
+| bus | 0.995 | 0.000 | 0.632 / 1.000 | 0.000 / 0.000 |
+| truck | 0.552 | 0.000 | 0.814 / 0.500 | 0.000 / 0.000 |
+| bicycle | 0.995 | 0.000 | 0.521 / 1.000 | 0.000 / 0.000 |
+
+*REAL_FOOTAGE_HOLDOUT (all three, 6 held-out real frames from `data/sample.mp4`, person only)*:
+
+| model | P | R | mAP50 | mAP50-95 |
+|---|---|---|---|---|
+| pretrained | 0.990 | 1.000 | 0.995 | 0.501 |
+| stage1 | 0.003 | 1.000 | 0.995 | 0.309 |
+| stage2 | 0.003 | 1.000 | 0.995 | 0.697 |
+
+See Section 2 for the full reasoning behind these (Stage 1's class-imbalance-driven collapse, Stage 2's narrow real-footage recovery). Nothing here is new; it's the same evaluation, now living under `evaluation/` as this phase's own re-run of it.
+
+### Tracking evaluation — the ground-truth decision, made explicitly, not silently `[IMPLEMENTED]`
+
+MOTA/IDF1/ID-switch-count all require ground-truth tracking annotations (which real object each track id *should* be, frame by frame) — TRACE never had these. Two real options existed: (a) hand-annotate a short real clip, or (b) use an existing small MOT-format benchmark clip. **Chosen: (a), hand-annotate real footage — specifically, reuse `data/sample.mp4`, not fresh annotation from scratch.** Reasoning: TRACE already has one real clip with an already-established, already-human-verified ground-truth box (Phase 13 Stage 2's review — the user directly confirmed a `person` box against three frames spanning the whole clip); downloading an external MOT benchmark clip (option b) would have added a licensing/download-size dependency for no clear benefit over data already verified and already governed by an explicit consent decision (Phase 13: real footage use is limited to `data/sample.mp4`, no new recording). This was told to the user before the harness was built around it, not decided silently.
+
+**Real, stated limitation of that choice, immediately obvious and worth calling out explicitly**: `data/sample.mp4` has exactly **one** object, present the entire clip. It can measure whether a tracker holds one continuous id across a full real clip despite real detection noise — but it can **never** produce or detect an ID switch, since there's nothing to switch identities *with*. Rather than quietly accept that gap, this phase also built a second, synthetic, ID-switch-*capable* scenario (`evaluation/tracking/ground_truth_synthetic.py`): two objects on constant-velocity, opposite-direction, crossing paths over 20 frames — a classic hard case for IoU-based association, since the symmetric velocities make both objects' Kalman-predicted positions converge exactly where the crossing happens. Detections fed to the tracker are the exact ground-truth boxes (no detector in the loop), isolating tracker behavior specifically.
+
+**Library**: the real `motmetrics` package (`evaluation/tracking/metrics.py`), not hand-rolled MOTA/IDF1 math. **A real compatibility bug found and fixed while wiring this up**: motmetrics 1.4.0 (latest on PyPI) calls the long-removed `numpy.asfarray` internally; this environment has NumPy 2.4.6, where that call raises `AttributeError`. Fixed with a minimal shim restoring `asfarray`'s exact old behavior (`np.asarray(a, dtype=float)`) at import time — not a NumPy downgrade, which risked breaking opencv/torch/ultralytics elsewhere in this codebase, and not an excuse to hand-roll the metric math instead.
+
+**A full-clip scan, run before finalizing the ground truth**: the pretrained detector was run across all 244 frames of `data/sample.mp4` to confirm the person is actually visible in every single one (zero gaps) before treating "person present, same box, all 244 frames" as ground truth. That scan also reproduced Section 2's already-documented "duplicate detection at frame 241" finding exactly (confidences 0.72/0.28) — real, independent confirmation of a limitation that was already known, not a new one.
+
+**The real result, both scenarios**:
+
+*REAL_FOOTAGE (`data/sample.mp4`, 244 frames, ground truth = one person, constant box, all 244 frames)*:
+
+| model | MOTA | IDF1 | switches | FP | misses | matches |
+|---|---|---|---|---|---|---|
+| pretrained | 1.000 | 1.000 | 0 | 0 | 0 | 244 |
+| stage1 | 0.000 | 0.000 | 0 | 0 | 244 | 0 |
+| stage2 | 0.000 | 0.000 | 0 | 0 | 244 | 0 |
+
+*SYNTHETIC_CROSSING (2 objects, 20 frames, real ByteTracker, no detector)*: MOTA=1.000, IDF1=1.000, switches=0, matches=40/40.
+
+**Honest reading, not just the numbers**: the pretrained detector fed into ByteTracker tracked the one real person perfectly across the entire clip — including through frame 241's duplicate-detection glitch, which apparently never disrupted the confirmed track (a genuinely positive, specific finding about ByteTrack's robustness to that particular noise, not assumed in advance). Stage 1 and Stage 2 scored a **flat 0.0 MOTA/IDF1** — not just worse than pretrained, a complete tracking failure: every one of Stage 1/2's real-footage detections (Section 2: ~99.7% false-positive rate, P≈0.003) landed far enough from the true person location, often enough, that ByteTrack never once produced a track matching the ground-truth box within the standard IoU≥0.5 threshold, in any of the 244 frames. This is the sharpest illustration in the whole project of why Section 2 keeps the pretrained baseline as `DEFAULT_MODEL_PATH`: a detector regression that looked survivable in isolated precision/recall numbers (Section 2's real-footage table above still shows R=1.000 for Stage 1/2) becomes a *total* tracking failure once fed through the full pipeline. The synthetic crossing scenario found no ID switch — ByteTrack's Kalman-based motion prediction correctly told the two constant-velocity objects apart even at their point of closest approach, in this one controlled scenario; this doesn't generalize to claiming ByteTrack never switches ids under harder conditions (occlusion, non-constant velocity, more than 2 objects), only that it didn't in this specific, real, reproducible test.
+
+**Scope, stated plainly**: MOTA/IDF1 here come from one 244-frame real clip (one object, no crossings) plus one 20-frame synthetic scenario (two objects, one controlled crossing) — not a large-scale, multi-scene, multi-object real benchmark. Treat these numbers as indicative of real, measured behavior in the specific cases tested, not as a definitive, general tracking-accuracy claim for TRACE.
+
+### Where this is implemented `[IMPLEMENTED]`
+
+- `evaluation/detection/evaluate.py` — reuses `training/evaluate.py` directly; writes `evaluation/results/detection_comparison.{json,txt}`.
+- `evaluation/tracking/metrics.py` — `compute_mot_metrics(gt_by_frame, hyp_by_frame, max_iou_distance=0.5)`, wrapping the real `motmetrics` `MOTAccumulator` + `metrics.create()` (with the `numpy.asfarray` shim above); converts TRACE's xyxy boxes to motmetrics' expected xywh.
+- `evaluation/tracking/ground_truth_real.py` — `ground_truth()`, the 244-frame single-person ground truth for `data/sample.mp4`, reusing Phase 13's human-confirmed box.
+- `evaluation/tracking/ground_truth_synthetic.py` — `ground_truth()`, the 20-frame 2-object crossing scenario.
+- `evaluation/tracking/evaluate.py` — runs the real pipeline (`FrameSource` → `YoloDetector` → `ByteTracker`) against `data/sample.mp4` for pretrained/Stage 1/Stage 2, and the synthetic scenario through the same tracker with ground-truth boxes as detections; writes `evaluation/results/tracking_comparison.{json,txt}`.
+- Tests: `tests/test_evaluation_tracking.py` — 3 tests asserting `compute_mot_metrics()` against hand-derived expected MOTA/IDF1 (a perfect-tracking case, a pure single-ID-switch case, and a missed-detection case — each with its derivation from MOTA/IDF1's own definitions written out in the test, then independently cross-checked against real `motmetrics` output while building this, not just trusted); 1 end-to-end smoke test running the real synthetic-crossing pipeline through the real `ByteTracker`, asserting only that the metrics are well-formed (no crash), never a specific switch count.
+
+### What I should know
+- [ ] I can explain why `data/sample.mp4`'s ground truth can never produce an ID switch, and why the synthetic scenario exists specifically to cover that gap.
+- [ ] I can explain what "MOTA=0.0" concretely means happened, frame by frame, for Stage 1/2 on real footage.
+- [ ] I can explain why reusing Phase 13's already-confirmed box for ground truth is more honest than copying a detector's own output.
+
+### Questions to test myself
+1. Why does evaluating a detector's raw precision/recall understate how bad Stage 1/2 actually are for TRACE, compared to running the full detect→track pipeline?
+2. What would it take to make the real-footage ground truth actually capable of testing ID switches?
+3. Why was a NumPy downgrade rejected in favor of a shim, given the actual bug was inside `motmetrics`, not this codebase?
+
+> **Note:** Sections 16–18 and 21 (listed in the Table of Contents) have not been written yet — Sections 0–15 exist above this point (14 and 20 added in Phase 15), plus Section 19 (Implementation Map), added here ahead of the sections it numerically follows so completed work has somewhere to be recorded. Section 20 (Experiments) lives at the end of this document, after Section 19, for the same reason. Fill in 16–18/21 as those phases are planned; renumber/reorder at that point if needed.
 
 ## 19. Implementation Map
 
@@ -1059,7 +1197,7 @@ Unlike `create_alert`/`configure_zone`/`configure_line`/`send_notification`, gen
 | Concrete tracker — ByteTrack via ultralytics' BYTETracker, provisional (Section 3) | `[IMPLEMENTED — provisional, see Section 3 for the reuse-vs-build and benchmarking trade-offs]` | `src/tracking/byte_tracker.py` | `ByteTracker(Tracker)` — `__init__(track_high_thresh=0.25, track_low_thresh=0.1, new_track_thresh=0.25, track_buffer=30, match_thresh=0.8, fuse_score=True)`, wraps `ultralytics.trackers.byte_tracker.BYTETracker` |
 | Tracking sanity-check CLI (Section 3, Section 8) | `[IMPLEMENTED]` | `scripts/track_video.py` | `main()` — wires `FrameSource` → `YoloDetector` → `ByteTracker` → drawn `id=<n> <class> <confidence>` labels, to `--output` and/or `--display` |
 | Tracker test coverage (Section 3, Section 16) | `[IMPLEMENTED]` | `tests/test_tracker.py` | 6 tests directly against `ByteTracker` (id stability, crossing paths, occlusion recovery vs. timeout, field propagation) + 1 integration test (`test_detector_to_tracker_pipeline_on_real_fixture_frames`) chaining `YoloDetector` → `ByteTracker` on `sample_video_path` |
-| MOTA / IDF1 tracking accuracy metrics (Section 3, Section 15) | `[PLANNED]` | — | requires ground-truth tracking annotations TRACE does not have yet; deliberately not computed or estimated this phase |
+| MOTA / IDF1 tracking accuracy metrics (Section 3, Section 15, added in Phase 14) | `[IMPLEMENTED]` | `evaluation/tracking/` | Real numbers via the `motmetrics` library: pretrained detector + ByteTracker scores MOTA=1.0/IDF1=1.0/0 switches on a 244-frame hand-annotated real clip; Stage 1/2 (Phase 13) score a flat 0.0/0.0 on the same clip — a complete tracking failure, not just worse. A synthetic 2-object crossing scenario (0 switches) covers the real clip's inherent inability to test ID switches (only one object). See Section 15 for full methodology and honest scope limits |
 | Trajectory / per-step motion analysis (Section 4) | `[IMPLEMENTED — pixel-space only]` | `src/trajectories/trajectory.py` | `centroid(bbox)`, `magnitude(vector)`, `MotionStep` (dataclass: `object_id`, `frame_id`, `timestamp`, `position`, `displacement`, `velocity`, `speed`, `direction`, `acceleration`, `is_stationary`), `Trajectory` (`update(position, timestamp, frame_id) -> MotionStep \| None`), `TrajectoryManager` (`update(tracks: list[Track]) -> list[MotionStep]`, `get_path(object_id)`) |
 | Trajectory sanity-check CLI (Section 4, Section 8) | `[IMPLEMENTED]` | `scripts/trajectory_video.py` | `main()` — wires `FrameSource` → `YoloDetector` → `ByteTracker` → `TrajectoryManager` → drawn path + box (color signals stationary/moving) + speed/state label, to `--output` and/or `--display` |
 | Trajectory test coverage (Section 4, Section 16) | `[IMPLEMENTED]` | `tests/test_trajectory.py` | constant velocity, a stop (deceleration signal), a direction change, jitter-tolerant stationary classification, `TrajectoryManager` routing via centroid |
@@ -1162,7 +1300,16 @@ Unlike `create_alert`/`configure_zone`/`configure_line`/`send_notification`, gen
 | Action tools registered with the agent (Section 12, Section 13, added in Phase 12) | `[IMPLEMENTED]` | `src/agent/tools.py` | The 5 `propose_*` functions added to `TOOL_SPECS` alongside Section 12's 7 read-only tools (12 total) |
 | `POST /alerts`, `GET /cameras/{id}/alerts` (Section 10, Section 13, added in Phase 12) | `[IMPLEMENTED]` | `src/api/routers/alerts.py`, `src/api/routers/cameras.py` | Direct alert creation (bypasses the agent gate — a real API call is already a confirmed action) and the "dashboard/API" delivery channel (an alert is "delivered" by being queryable here) |
 | `GET /agent/actions/{id}`, `POST /agent/actions/{id}/approve` (Section 10, Section 13, added in Phase 12) | `[IMPLEMENTED]` | `src/api/routers/agent.py`, `src/api/deps.py` | The real, code-level approval gate's only entry point; `409` if the action isn't still `"pending"` |
-| Agent actions + alerts test coverage (Section 13, Section 16, added in Phase 12) | `[IMPLEMENTED]` | `tests/test_agent_actions.py`, `tests/test_api.py` | 15 tests confirming every `propose_*` leaves the database unchanged and `execute_pending_action` mutates exactly once (not on a second call), plus the OVERSPEED→`Alert` end-to-end path and a non-triggering-type negative case; 9 new API tests including the full HTTP propose→verify-empty→approve→verify-created flow and the `409`-on-double-approval case, also verified manually against a real running `uvicorn` instance. 215 tests total in `tests/`, all passing |
+| Agent actions + alerts test coverage (Section 13, Section 16, added in Phase 12) | `[IMPLEMENTED]` | `tests/test_agent_actions.py`, `tests/test_api.py` | 15 tests confirming every `propose_*` leaves the database unchanged and `execute_pending_action` mutates exactly once (not on a second call), plus the OVERSPEED→`Alert` end-to-end path and a non-triggering-type negative case; 9 new API tests including the full HTTP propose→verify-empty→approve→verify-created flow and the `409`-on-double-approval case, also verified manually against a real running `uvicorn` instance |
+| Detection evaluation harness, reusing Phase 13 directly (Section 2, Section 15, added in Phase 14) | `[IMPLEMENTED]` | `evaluation/detection/evaluate.py` | Calls `training/evaluate.py`'s `build_coco_holdout_comparison`/`build_real_footage_holdout_comparison` directly (no reimplementation); archives the same real numbers under `evaluation/results/detection_comparison.{json,txt}` as this phase's own artifact |
+| MOTA/IDF1 computation via real `motmetrics` (Section 15, added in Phase 14) | `[IMPLEMENTED]` | `evaluation/tracking/metrics.py` | `compute_mot_metrics(gt_by_frame, hyp_by_frame, max_iou_distance=0.5)` — wraps `motmetrics`' `MOTAccumulator` + `metrics.create()`, converts xyxy→xywh; includes a `numpy.asfarray` shim for a real motmetrics 1.4.0 / NumPy 2.4.6 incompatibility found while building this |
+| Real + synthetic tracking ground truth (Section 15, added in Phase 14) | `[IMPLEMENTED]` | `evaluation/tracking/ground_truth_real.py`, `evaluation/tracking/ground_truth_synthetic.py` | Real: 244-frame single-person ground truth for `data/sample.mp4`, reusing Phase 13's human-confirmed box; a full-clip scan (all 244 frames) confirmed zero detection gaps and reproduced Section 2's documented frame-241 duplicate-detection finding exactly. Synthetic: a 20-frame, 2-object, constant-velocity crossing scenario — the real clip's only object can never produce an ID switch, so this exists specifically to cover that |
+| Tracking evaluation harness (Section 15, added in Phase 14) | `[IMPLEMENTED]` | `evaluation/tracking/evaluate.py` | Real pipeline (`FrameSource`→`YoloDetector`→`ByteTracker`) against `data/sample.mp4` for pretrained/Stage1/Stage2 (Phase 13); the synthetic scenario through the same tracker with ground-truth boxes as detections (isolating tracker behavior). Real result: pretrained MOTA=1.0/IDF1=1.0/0 switches; Stage1/Stage2 both 0.0/0.0 (complete tracking failure); synthetic crossing 1.0/1.0/0 switches. Writes `evaluation/results/tracking_comparison.{json,txt}` |
+| Evaluation harness test coverage (Section 15, Section 16, added in Phase 14) | `[IMPLEMENTED]` | `tests/test_evaluation_tracking.py` | 3 tests against hand-derived expected MOTA/IDF1 (perfect tracking, a pure single-ID-switch, a missed detection — each derivation written out in the test and independently cross-checked against real `motmetrics` output while building this); 1 end-to-end smoke test running the real synthetic-crossing pipeline through the real `ByteTracker`, asserting well-formed output only, never a specific switch count |
+| Real GPU/CUDA/TensorRT capability probe (Section 14, added in Phase 15) | `[IMPLEMENTED]` | `benchmarks/gpu_support.py` | `nvidia_smi_gpu_name()`, `torch_cuda_status()`, `tensorrt_availability()`, `gpu_memory_status()` — independent, real checks (never a hardcoded skip); found and precisely documented a real discrepancy on this machine: `nvidia-smi` detects a physical RTX 4050, but the installed `torch==2.13.0+cpu` has no CUDA support compiled in |
+| ONNX / TensorRT export scripts (Section 14, added in Phase 15) | `[IMPLEMENTED]` | `benchmarks/export_onnx.py`, `benchmarks/export_tensorrt.py` | `export_onnx.py` runs Ultralytics' own `model.export(format="onnx")`, real result `models/yolov8n.onnx` (12.3 MB); `export_tensorrt.py` checks `gpu_support.tensorrt_availability()` first and skips with the specific real reason(s) when unsupported (this machine: no `tensorrt` package, no CUDA-enabled torch) — writes `benchmarks/results/tensorrt_export_status.json` either way |
+| Performance benchmarking harness (Section 14, Section 20, added in Phase 15) | `[IMPLEMENTED]` | `benchmarks/benchmark.py` | `run_benchmark(model_path, source_video, warmup_frames, max_frames)` — runs the real, unmodified `FrameSource` → `YoloDetector` → `ByteTracker` pipeline against `data/sample.mp4`, measuring detection/tracking/end-to-end FPS, per-stage latency (mean/median/p95), process CPU%, and GPU memory (real `torch.cuda` stats or an explicit reasoned "not measured"); writes `benchmarks/results/<label>.{json,txt}`. Real result: PyTorch backend measured 5.72 end-to-end FPS, ONNX (CPU) backend measured 1.20 — see Section 20 for the full experiment writeup |
+| Benchmark harness test coverage (Section 14, Section 16, added in Phase 15) | `[IMPLEMENTED]` | `tests/test_benchmarks.py` | 3 tests: the harness produces well-formed FPS/latency/CPU/GPU-memory output on the tiny synthetic fixture video, it writes valid results files, and `tensorrt_availability()`'s output is internally consistent regardless of which way the real check comes out — none assert specific performance numbers, since those are hardware-dependent. 223 tests total in `tests/`, all passing |
 
 ### What I should know
 - [ ] I can explain why the API sits between the pipeline/database and every consumer (dashboard, agent).
@@ -1177,3 +1324,73 @@ Unlike `create_alert`/`configure_zone`/`configure_line`/`send_notification`, gen
 2. What's the risk of skipping the service layer and calling the database directly from route handlers?
 3. Why does the agent talk to the same API/database as the dashboard, instead of having its own private data path?
 4. Why does `tests/test_agent.py` use a scripted `GroundedFakeLLMSession` instead of calling a real LLM, and what does that test suite actually prove vs. not prove about the real `AnthropicLLMClient` path?
+
+---
+
+## 20. Experiments
+
+*Added in Phase 15, alongside Section 14 (Production Computer Vision), which this section supplies the real numbers for. Every experiment below follows the same structure: **Hypothesis** (what was expected, and why, before running anything) → **Setup** (exact machine, model, data, code) → **Metrics** (what was measured) → **Result** (the real numbers, unedited) → **Interpretation** (what the numbers plausibly mean, distinguished from what's just confirmed) → **Conclusion** (what TRACE should actually do as a result). No number in this section was estimated or assumed — every one came from an actual run of `benchmarks/benchmark.py`, `benchmarks/export_onnx.py`, or `benchmarks/export_tensorrt.py` on this machine; where a backend genuinely could not be run, that's stated as a real, checked fact instead of a filled-in guess.*
+
+*Machine used for every experiment below: Windows 11, 13th Gen Intel Core i7-13620H (CPU-only inference throughout), `torch==2.13.0+cpu`, `ultralytics==8.4.135`, `onnx==1.22.0`, `onnxruntime==1.29.0`. Source video for all detection/tracking runs: `data/sample.mp4` (244 frames, 15 FPS native, 640×480 — the same clip used for evaluation throughout Section 15).*
+
+### Experiment 1 — PyTorch vs. ONNX Runtime, CPU inference
+
+**Hypothesis**: Exporting the default detector (`yolov8n.pt`) to ONNX and running it through ONNX Runtime will match or improve inference throughput relative to native PyTorch CPU inference, since ONNX Runtime is commonly used specifically for its CPU-inference graph optimizations.
+
+**Setup**: `benchmarks/export_onnx.py` exported `yolov8n.pt` via Ultralytics' own `model.export(format="onnx")` (opset 18, `onnxslim`-optimized, resulting file 12.3 MB, `models/yolov8n.onnx`). Both backends were then measured with the identical harness (`benchmarks/benchmark.py`) against the identical source video and pipeline: `FrameSource` → `YoloDetector(model_path=..., confidence_threshold=0.25, class_allowlist=DEFAULT_CLASS_ALLOWLIST)` → `ByteTracker()`, confidence threshold and class allowlist unchanged between runs, 10 warmup frames excluded from measurement, all 244 frames measured. `YoloDetector` itself required zero backend-specific code — Ultralytics' `AutoBackend` dispatches on the `.pt`/`.onnx` file extension internally, and for the ONNX run selected `CPUExecutionProvider` (ONNX Runtime 1.29.0, default session options — no explicit graph-optimization or thread-count tuning applied on either side).
+
+**Metrics**: detection FPS, tracking FPS, end-to-end FPS, per-stage latency (mean/median/p95 ms), process CPU%, GPU memory.
+
+**Result**:
+
+| metric | PyTorch (`yolov8n.pt`) | ONNX Runtime CPU (`yolov8n.onnx`) |
+|---|---|---|
+| detection FPS | **5.81** | **1.22** |
+| detection latency (mean / p95) | 172.08 ms / 200.48 ms | 818.68 ms / 957.49 ms |
+| tracking FPS | 739.01 | 165.90 |
+| tracking latency (mean / p95) | 1.35 ms / 1.56 ms | 6.03 ms / 7.98 ms |
+| end-to-end FPS | **5.72** | **1.20** |
+| end-to-end latency (mean / p95) | 174.75 ms / 203.09 ms | 831.79 ms / 976.13 ms |
+| CPU (process) | 294.3% | 316.4% |
+| GPU memory | not measured — see Experiment 2 | not measured — see Experiment 2 |
+
+Full raw output: `benchmarks/results/pytorch_pretrained.{json,txt}`, `benchmarks/results/onnx_pretrained.{json,txt}`.
+
+**Interpretation**: On this specific machine, for this specific model and this specific (default, untuned) export/session configuration, ONNX Runtime was roughly **4.8× slower** than native PyTorch CPU inference — the opposite of the common "ONNX is faster" assumption, and reported here exactly as measured rather than adjusted toward the expected direction. `ByteTracker.update()` itself is identical code in both runs, yet tracking FPS also dropped (739 → 166); this isn't a change in the tracker's own cost, but the same process under heavier per-call CPU contention immediately after a much slower detection call — an observation, not something independently isolated further in this phase. Plausible (not confirmed) causes for the detection-side gap: PyTorch's CPU inference here benefits from its own oneDNN-backed kernels already tuned for this op set, while Ultralytics' default `AutoBackend` ONNX session enables neither extended graph optimizations nor explicit intra/inter-op thread tuning — Ultralytics' own export log even suggested OpenVINO as the better fit for this Intel CPU, unprompted, which is a real, relevant signal this experiment didn't have scope to chase down further. Postprocessing (NMS, box decoding) is identical Python code in both runs, so the gap sits in the inference call itself, not around it.
+
+Tied back to Section 8's constraint: `data/sample.mp4`'s native rate is 15 FPS. PyTorch's measured 5.72 end-to-end FPS is already below that — meaning on *this* hardware, TRACE's live pipeline would need frame skipping (or faster hardware) to keep up with a 15 FPS feed even before considering ONNX; the ONNX backend's 1.20 FPS would fall drastically further behind.
+
+**Conclusion**: ONNX export should **not** be adopted as TRACE's default backend based on this result — it made the pipeline slower here, not faster, under the default configuration this phase actually tested. This doesn't rule out ONNX generally (a tuned session with explicit graph-optimization level, thread pinning, or an OpenVINO execution provider could plausibly close or reverse this gap), but that tuning work is real, unfinished, and out of this phase's scope — left as a genuine, flagged follow-up rather than a resolved recommendation either way. The PyTorch backend remains what TRACE actually runs.
+
+### Experiment 2 — TensorRT / GPU-accelerated inference feasibility
+
+**Hypothesis**: If TensorRT can be exercised on this machine's hardware, GPU-accelerated inference should substantially outperform both CPU backends measured in Experiment 1.
+
+**Setup**: `benchmarks/export_tensorrt.py` ran `benchmarks/gpu_support.py`'s real capability probe before attempting any export — checking, independently: (1) whether the `tensorrt` Python package is importable, (2) whether `torch.cuda.is_available()` is `True`, and (3) whether `nvidia-smi` detects a physical NVIDIA GPU at all (a fact independent of the installed PyTorch build).
+
+**Metrics**: none — this experiment measures *capability*, not performance. No FPS/latency/memory number was collected because the backend was never actually run, per this phase's explicit requirement not to fake numbers for a backend that wasn't exercised.
+
+**Result** (`benchmarks/results/tensorrt_export_status.json`):
+
+| check | result |
+|---|---|
+| `tensorrt` package installed | **False** |
+| `torch.cuda.is_available()` | **False** (installed PyTorch: `2.13.0+cpu`) |
+| physical GPU detected (`nvidia-smi`) | **True** — NVIDIA GeForce RTX 4050 Laptop GPU, driver 595.79, CUDA 13.2 (driver-supported) |
+| TensorRT export supported | **False** |
+
+**Interpretation**: This machine has a real, physically present GPU capable in principle of running TensorRT — confirmed independently via `nvidia-smi`, not inferred from PyTorch. What's actually missing is entirely software: the installed PyTorch build has no CUDA support compiled in, and the `tensorrt` package was never installed. This is a **software-stack limitation, not an absence of GPU hardware**, and Section 14 documents why that distinction matters. Fixing it would require installing a CUDA-enabled PyTorch build and the `tensorrt` package — real, known, non-mysterious steps, just not ones taken in this phase.
+
+**Conclusion**: TensorRT export and GPU-accelerated benchmarking were not exercised on this hardware in this phase, and no number for either appears anywhere in this document as a result. This was a deliberate scope decision, not an oversight: enabling it means reinstalling the PyTorch build every other part of TRACE's pipeline (detection, tracking, training) already depends on — a large (~2GB+), disruptive, non-trivial-to-fully-reverse change with real risk of version friction against `ultralytics`'/`opencv`'s own pins. This trade-off was surfaced to the user explicitly before this phase's benchmarking began, and the CPU-only scope actually measured here was the confirmed choice, not a silent limitation discovered after the fact. If TRACE later needs GPU/TensorRT numbers, this section's `benchmarks/` scripts already contain the real detection logic to pick that work back up — only the environment, not the code, would need to change.
+
+### What I should know
+- [ ] I can explain why Experiment 1's result contradicts the common "ONNX is always faster" assumption, and why that's reported as-is rather than smoothed over.
+- [ ] I can explain the exact difference between what Experiment 2 measured and what it would have measured if TensorRT had been supported here.
+- [ ] I can explain why "software-stack limitation" is the accurate description of this machine's GPU situation, not "no GPU."
+- [ ] I can connect Experiment 1's end-to-end FPS number back to Section 8's "processing FPS < video FPS" constraint using `data/sample.mp4`'s real 15 FPS native rate.
+
+### Questions to test myself
+1. What's one concrete, unexplored next step that could plausibly make ONNX faster than PyTorch on this same machine, and why wasn't it done in this phase?
+2. Why does `benchmarks/gpu_support.py` check `nvidia-smi` and `torch.cuda.is_available()` separately instead of using just one of them?
+3. If this machine's PyTorch build were swapped for a CUDA-enabled one tomorrow, which specific numbers in this section would need to be re-measured, and which (if any) would stay valid?
+4. Why does Experiment 2 have no Metrics/Result performance table, and why is that itself the honest outcome rather than a gap in the write-up?

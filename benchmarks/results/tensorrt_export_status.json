@@ -1,0 +1,11 @@
+{
+  "supported": false,
+  "has_tensorrt_package": false,
+  "torch_cuda_available": false,
+  "torch_version": "2.13.0+cpu",
+  "physical_gpu_detected": "NVIDIA GeForce RTX 4050 Laptop GPU",
+  "reasons_unsupported": [
+    "the `tensorrt` Python package is not installed",
+    "torch.cuda.is_available() is False (installed PyTorch is 2.13.0+cpu, a CPU-only build)"
+  ]
+}

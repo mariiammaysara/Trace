@@ -1,0 +1,8 @@
+=== REAL_FOOTAGE (244 frames, data/sample.mp4, person only) ===
+model            MOTA     IDF1  switches      FP   misses  matches
+pretrained      1.000    1.000         0       0        0      244
+stage1          0.000    0.000         0       0      244        0
+stage2          0.000    0.000         0       0      244        0
+
+=== SYNTHETIC_CROSSING (20 frames, 2 objects, real ByteTracker, no detector) ===
+MOTA=1.000  IDF1=1.000  switches=0  FP=0  misses=0  matches=40

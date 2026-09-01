@@ -1,0 +1,27 @@
+=== COCO_HOLDOUT: pretrained vs Stage 1 (held-out COCO128 val, 6 classes) ===
+pretrained: yolov8n.pt
+stage1: C:\Users\ahmed\Desktop\Trace\models\yolov8n_trace_stage1.pt
+
+class        model       images  instances       P       R   mAP50  mAP50-95
+person       pretrained      14         58   0.723   0.707   0.744     0.497
+person       stage1          14         58   0.005   0.810   0.340     0.184
+car          pretrained       5         19   0.461   0.316   0.406     0.212
+car          stage1           5         19   0.000   0.000   0.000     0.000
+motorcycle   pretrained       2          3   1.000   0.973   0.995     0.830
+motorcycle   stage1           2          3   0.000   0.000   0.000     0.000
+bus          pretrained       1          1   0.632   1.000   0.995     0.895
+bus          stage1           1          1   0.000   0.000   0.000     0.000
+truck        pretrained       3          4   0.814   0.500   0.552     0.440
+truck        stage1           3          4   0.000   0.000   0.000     0.000
+bicycle      pretrained       1          1   0.521   1.000   0.995     0.895
+bicycle      stage1           1          1   0.000   0.000   0.000     0.000
+
+=== REAL_FOOTAGE_HOLDOUT: pretrained vs Stage 1 vs Stage 2 (held-out data/sample.mp4 frames, person only) ===
+pretrained: yolov8n.pt
+stage1: C:\Users\ahmed\Desktop\Trace\models\yolov8n_trace_stage1.pt
+stage2: C:\Users\ahmed\Desktop\Trace\models\yolov8n_trace_stage2.pt
+
+class        model       images  instances       P       R   mAP50  mAP50-95
+person       pretrained       6          6   0.990   1.000   0.995     0.501
+person       stage1           6          6   0.003   1.000   0.995     0.309
+person       stage2           6          6   0.003   1.000   0.995     0.697

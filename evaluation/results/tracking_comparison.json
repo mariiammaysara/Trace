@@ -1,0 +1,47 @@
+{
+  "real_footage": {
+    "ground_truth_frames": 244,
+    "weights": {
+      "pretrained": "yolov8n.pt",
+      "stage1": "C:\\Users\\ahmed\\Desktop\\Trace\\models\\yolov8n_trace_stage1.pt",
+      "stage2": "C:\\Users\\ahmed\\Desktop\\Trace\\models\\yolov8n_trace_stage2.pt"
+    },
+    "results": {
+      "pretrained": {
+        "mota": 1.0,
+        "idf1": 1.0,
+        "num_switches": 0.0,
+        "num_false_positives": 0.0,
+        "num_misses": 0.0,
+        "num_matches": 244.0
+      },
+      "stage1": {
+        "mota": 0.0,
+        "idf1": 0.0,
+        "num_switches": 0.0,
+        "num_false_positives": 0.0,
+        "num_misses": 244.0,
+        "num_matches": 0.0
+      },
+      "stage2": {
+        "mota": 0.0,
+        "idf1": 0.0,
+        "num_switches": 0.0,
+        "num_false_positives": 0.0,
+        "num_misses": 244.0,
+        "num_matches": 0.0
+      }
+    }
+  },
+  "synthetic_crossing": {
+    "ground_truth_frames": 20,
+    "results": {
+      "mota": 1.0,
+      "idf1": 1.0,
+      "num_switches": 0.0,
+      "num_false_positives": 0.0,
+      "num_misses": 0.0,
+      "num_matches": 40.0
+    }
+  }
+}

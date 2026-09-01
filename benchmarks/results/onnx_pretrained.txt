@@ -1,0 +1,7 @@
+=== onnx_pretrained (models/yolov8n.onnx) ===
+frames processed: 244 (warmup: 10)
+detection FPS:  1.22   (mean 818.68 ms, p95 957.49 ms)
+tracking FPS:   165.90   (mean 6.03 ms, p95 7.98 ms)
+end-to-end FPS: 1.20   (mean 831.79 ms, p95 976.13 ms)
+CPU (process):  316.4%
+GPU memory:     not measured -- torch.cuda.is_available() is False (installed PyTorch is 2.13.0+cpu, a CPU-only build) -- no CUDA device for this process to allocate GPU memory on
