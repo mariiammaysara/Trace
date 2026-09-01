@@ -71,10 +71,18 @@ def main() -> None:
             repository.get_or_create_zone(session, camera, zone.id, zone.polygon)
         for line in lines:
             repository.get_or_create_line(session, camera, line.id, line.start, line.end)
-        session.commit()
-        print(f"loaded camera_id={args.camera_id!r}: {len(lines)} line(s), {len(zones)} zone(s) -> persisted to database")
 
         source = _parse_source(args.source)
+        video = None
+        if isinstance(source, str):
+            # a live camera index has no file to register/replay -- only file
+            # sources get a Video row (Section 9: "one row per ingested video
+            # file"), which is also what GET /videos/{id}/stream serves.
+            video = repository.create_video(session, camera, source)
+        session.commit()
+        print(f"loaded camera_id={args.camera_id!r}: {len(lines)} line(s), {len(zones)} zone(s) -> persisted to database")
+        if video is not None:
+            print(f"registered video id={video.id} path={source!r} -- GET /videos/{video.id}/stream serves it")
         detector = YoloDetector(
             model_path=args.model,
             confidence_threshold=args.confidence,
@@ -102,7 +110,9 @@ def main() -> None:
                         session, camera, track.object_id, track.class_name, track.timestamp
                     )
                     x, y = centroid(track.bbox)
-                    repository.add_track_point(session, tracked_object, track.frame_id, track.timestamp, x, y)
+                    repository.add_track_point(
+                        session, tracked_object, track.frame_id, track.timestamp, x, y, bbox=track.bbox
+                    )
                     total_track_points += 1
 
                 for event in events:

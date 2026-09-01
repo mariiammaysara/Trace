@@ -120,7 +120,16 @@ class TrackedObject(Base):
 
 
 class TrackPoint(Base):
-    """Time-series position per object -- Section 9's `track_points` table."""
+    """Time-series position per object -- Section 9's `track_points` table.
+
+    x/y is the centroid (Phase 4's trajectories.centroid()), kept for
+    lightweight trajectory-line rendering. x_min/y_min/x_max/y_max is the
+    full xyxy detection box (Section 1.3/2 convention) -- added in Phase 10.1
+    so the dashboard's Live/Video overlay can draw real detection boxes
+    instead of a fixed-size guess around the centroid. Nullable because it's
+    optional at the repository layer: existing callers that only ever needed
+    the centroid (Phase 8) keep working unchanged.
+    """
 
     __tablename__ = "track_points"
 
@@ -130,6 +139,10 @@ class TrackPoint(Base):
     timestamp: Mapped[float] = mapped_column(Float, nullable=False, index=True)
     x: Mapped[float] = mapped_column(Float, nullable=False)
     y: Mapped[float] = mapped_column(Float, nullable=False)
+    x_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    y_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    x_max: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    y_max: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     object: Mapped["TrackedObject"] = relationship(back_populates="track_points")
 

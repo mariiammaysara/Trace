@@ -89,6 +89,16 @@ class LineRead(BaseModel):
     end: Tuple[float, float]
 
 
+class TrackedObjectRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    object_id: int
+    class_name: str
+    first_seen: float
+    last_seen: float
+
+
 class EventRead(BaseModel):
     id: int
     object_id: int
@@ -106,6 +116,10 @@ class TrackPointRead(BaseModel):
     timestamp: float
     x: float
     y: float
+    x_min: Optional[float] = None
+    y_min: Optional[float] = None
+    x_max: Optional[float] = None
+    y_max: Optional[float] = None
 
 
 class TrajectoryRead(BaseModel):

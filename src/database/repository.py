@@ -93,9 +93,23 @@ def get_or_create_object(
 
 
 def add_track_point(
-    session: Session, tracked_object: TrackedObject, frame_id: int, timestamp: float, x: float, y: float
+    session: Session,
+    tracked_object: TrackedObject,
+    frame_id: int,
+    timestamp: float,
+    x: float,
+    y: float,
+    *,
+    bbox: Optional[Tuple[float, float, float, float]] = None,
 ) -> TrackPoint:
-    point = TrackPoint(object_id=tracked_object.id, frame_id=frame_id, timestamp=timestamp, x=x, y=y)
+    """bbox, if given, is xyxy (x_min, y_min, x_max, y_max) -- Section 1.3/2
+    convention, same as Detection.bbox/Track.bbox. Optional so existing
+    callers that only ever needed the centroid keep working unchanged."""
+    x_min, y_min, x_max, y_max = bbox if bbox is not None else (None, None, None, None)
+    point = TrackPoint(
+        object_id=tracked_object.id, frame_id=frame_id, timestamp=timestamp, x=x, y=y,
+        x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max,
+    )
     session.add(point)
     return point
 
@@ -180,6 +194,44 @@ def get_track_points_for_object(session: Session, tracked_object: TrackedObject)
 
 def get_camera(session: Session, camera_id: str) -> Optional[Camera]:
     return session.execute(select(Camera).where(Camera.camera_id == camera_id)).scalar_one_or_none()
+
+
+def list_cameras(session: Session) -> List[Camera]:
+    return list(session.execute(select(Camera).order_by(Camera.camera_id)).scalars())
+
+
+def list_zones_for_camera(session: Session, camera: Camera) -> List[Zone]:
+    """Phase 10.1 needs this to overlay configured zones on the Live/Video
+    view -- Phase 9's original endpoint table only had POST /zones, no way
+    to list what's configured for a camera."""
+    return list(session.execute(select(Zone).where(Zone.camera_id == camera.id).order_by(Zone.zone_id)).scalars())
+
+
+def list_lines_for_camera(session: Session, camera: Camera) -> List[Line]:
+    """Same gap as list_zones_for_camera, for lines."""
+    return list(session.execute(select(Line).where(Line.camera_id == camera.id).order_by(Line.line_id)).scalars())
+
+
+def list_objects_for_camera(session: Session, camera: Camera) -> List[TrackedObject]:
+    """Every TrackedObject seen on one camera -- Phase 10.1 needs this to know
+    which objects exist to overlay on a video; Phase 9's original endpoint
+    table had no per-camera object listing, only single-object lookup by id."""
+    return list(
+        session.execute(
+            select(TrackedObject).where(TrackedObject.camera_id == camera.id).order_by(TrackedObject.first_seen)
+        ).scalars()
+    )
+
+
+def list_videos(session: Session, *, camera_id: Optional[str] = None) -> List[Video]:
+    query = select(Video)
+    if camera_id is not None:
+        query = query.join(Video.camera).where(Camera.camera_id == camera_id)
+    return list(session.execute(query.order_by(Video.id)).scalars())
+
+
+def get_video(session: Session, id: int) -> Optional[Video]:  # noqa: A002 -- matches the REST resource id
+    return session.get(Video, id)
 
 
 def get_object(session: Session, id: int) -> Optional[TrackedObject]:  # noqa: A002 -- matches the REST resource id

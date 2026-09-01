@@ -32,5 +32,11 @@ def get_object_trajectory(id: int, session: Session = Depends(get_db)) -> Trajec
         class_name=tracked_object.class_name,
         first_seen=tracked_object.first_seen,
         last_seen=tracked_object.last_seen,
-        points=[TrackPointRead(frame_id=p.frame_id, timestamp=p.timestamp, x=p.x, y=p.y) for p in points],
+        points=[
+            TrackPointRead(
+                frame_id=p.frame_id, timestamp=p.timestamp, x=p.x, y=p.y,
+                x_min=p.x_min, y_min=p.y_min, x_max=p.x_max, y_max=p.y_max,
+            )
+            for p in points
+        ],
     )

@@ -49,6 +49,72 @@ def test_create_camera_missing_required_field_fails_validation(client):
     assert response.status_code == 422
 
 
+# --- GET /cameras ---
+
+
+def test_list_cameras_success(client, db_session):
+    repository.get_or_create_camera(db_session, "cam_list_a")
+    repository.get_or_create_camera(db_session, "cam_list_b")
+    db_session.flush()
+
+    response = client.get("/cameras")
+    assert response.status_code == 200
+    camera_ids = {c["camera_id"] for c in response.json()}
+    assert {"cam_list_a", "cam_list_b"} <= camera_ids
+
+
+def test_list_cameras_empty_is_still_200(client):
+    response = client.get("/cameras")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+# --- GET /cameras/{camera_id}/zones, GET /cameras/{camera_id}/lines ---
+
+
+def test_list_camera_zones_and_lines(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_geo")
+    repository.get_or_create_zone(db_session, camera, "z1", [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)])
+    repository.get_or_create_line(db_session, camera, "l1", (0.0, 5.0), (10.0, 5.0))
+    db_session.flush()
+
+    zones_response = client.get("/cameras/cam_geo/zones")
+    assert zones_response.status_code == 200
+    assert zones_response.json()[0]["zone_id"] == "z1"
+
+    lines_response = client.get("/cameras/cam_geo/lines")
+    assert lines_response.status_code == 200
+    assert lines_response.json()[0] == {"id": lines_response.json()[0]["id"], "line_id": "l1", "start": [0.0, 5.0], "end": [10.0, 5.0]}
+
+
+def test_list_camera_zones_unknown_camera_returns_404(client):
+    assert client.get("/cameras/nonexistent/zones").status_code == 404
+
+
+def test_list_camera_lines_unknown_camera_returns_404(client):
+    assert client.get("/cameras/nonexistent/lines").status_code == 404
+
+
+# --- GET /cameras/{camera_id}/objects ---
+
+
+def test_list_camera_objects_success(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_objs")
+    repository.get_or_create_object(db_session, camera, object_id=1, class_name="person", timestamp=0.0)
+    repository.get_or_create_object(db_session, camera, object_id=2, class_name="car", timestamp=1.0)
+    db_session.flush()
+
+    response = client.get("/cameras/cam_objs/objects")
+    assert response.status_code == 200
+    class_names = {o["class_name"] for o in response.json()}
+    assert class_names == {"person", "car"}
+
+
+def test_list_camera_objects_unknown_camera_returns_404(client):
+    response = client.get("/cameras/nonexistent/objects")
+    assert response.status_code == 404
+
+
 # --- GET /cameras/{camera_id}/events ---
 
 
@@ -90,6 +156,64 @@ def test_create_video_unknown_camera_returns_404(client):
     assert response.status_code == 404
 
 
+# --- GET /videos, GET /videos/{id}, GET /videos/{id}/stream ---
+
+
+def test_list_videos_filters_by_camera(client, db_session):
+    camera_a = repository.get_or_create_camera(db_session, "cam_vid_a")
+    camera_b = repository.get_or_create_camera(db_session, "cam_vid_b")
+    repository.create_video(db_session, camera_a, "/data/a.mp4")
+    repository.create_video(db_session, camera_b, "/data/b.mp4")
+    db_session.flush()
+
+    response = client.get("/videos", params={"camera_id": "cam_vid_a"})
+    assert response.status_code == 200
+    paths = [v["path"] for v in response.json()]
+    assert paths == ["/data/a.mp4"]
+
+
+def test_get_video_success(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_vid_c")
+    video = repository.create_video(db_session, camera, "/data/c.mp4")
+    db_session.flush()
+
+    response = client.get(f"/videos/{video.id}")
+    assert response.status_code == 200
+    assert response.json()["path"] == "/data/c.mp4"
+
+
+def test_get_video_unknown_id_returns_404(client):
+    response = client.get("/videos/999999")
+    assert response.status_code == 404
+
+
+def test_stream_video_success(client, db_session, tmp_path):
+    real_file = tmp_path / "clip.mp4"
+    real_file.write_bytes(b"fake mp4 bytes for streaming test")
+    camera = repository.get_or_create_camera(db_session, "cam_vid_stream")
+    video = repository.create_video(db_session, camera, str(real_file))
+    db_session.flush()
+
+    response = client.get(f"/videos/{video.id}/stream")
+    assert response.status_code == 200
+    assert response.content == b"fake mp4 bytes for streaming test"
+    assert response.headers["content-type"] == "video/mp4"
+
+
+def test_stream_video_missing_file_on_disk_returns_404(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_vid_missing")
+    video = repository.create_video(db_session, camera, "/nonexistent/path/does-not-exist.mp4")
+    db_session.flush()
+
+    response = client.get(f"/videos/{video.id}/stream")
+    assert response.status_code == 404
+
+
+def test_stream_video_unknown_id_returns_404(client):
+    response = client.get("/videos/999999/stream")
+    assert response.status_code == 404
+
+
 # --- GET /objects/{id}/trajectory ---
 
 
@@ -106,7 +230,21 @@ def test_get_object_trajectory_success(client, db_session):
     assert body["camera_id"] == "cam_4"
     assert body["class_name"] == "car"
     assert len(body["points"]) == 2
-    assert body["points"][0] == {"frame_id": 0, "timestamp": 0.0, "x": 1.0, "y": 2.0}
+    assert body["points"][0] == {
+        "frame_id": 0, "timestamp": 0.0, "x": 1.0, "y": 2.0,
+        "x_min": None, "y_min": None, "x_max": None, "y_max": None,
+    }
+
+
+def test_get_object_trajectory_includes_bbox_when_provided(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_4b")
+    obj = repository.get_or_create_object(db_session, camera, object_id=1, class_name="car", timestamp=0.0)
+    repository.add_track_point(db_session, obj, frame_id=0, timestamp=0.0, x=5.0, y=5.0, bbox=(0.0, 1.0, 10.0, 11.0))
+    db_session.flush()
+
+    response = client.get(f"/objects/{obj.id}/trajectory")
+    point = response.json()["points"][0]
+    assert (point["x_min"], point["y_min"], point["x_max"], point["y_max"]) == (0.0, 1.0, 10.0, 11.0)
 
 
 def test_get_object_trajectory_unknown_id_returns_404(client):

@@ -1,13 +1,15 @@
 /**
- * App shell placeholder: Header + Sidebar, built from TRACE's design tokens
+ * App shell: Header + Sidebar, built from TRACE's design tokens
  * (theme/tokens.css via the CSS variable mapping in index.css), not
- * hardcoded colors. Content area is empty -- real dashboard views come later.
+ * hardcoded colors. Content area renders the Live/Video view (Phase 10.1).
  *
  * The header's "TRACE" mark is a TEXT placeholder, not the real logo/
  * wordmark asset -- no logo file has been provided yet (checked the whole
  * repo, nothing found). Swap <Wordmark /> below for the real asset once
  * it's sent.
  */
+
+import { LiveView } from '@/components/LiveView'
 
 function Wordmark() {
   return (
@@ -65,9 +67,7 @@ function App() {
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-auto p-6">
-          <div className="rounded-lg border border-border bg-surface p-6 text-secondary">
-            Content area placeholder — dashboard views land here.
-          </div>
+          <LiveView />
         </main>
       </div>
     </div>
