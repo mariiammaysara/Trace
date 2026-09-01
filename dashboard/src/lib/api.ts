@@ -76,6 +76,19 @@ export interface Line {
   end: [number, number]
 }
 
+export interface AnalyticsSummary {
+  camera_id: string | null
+  start_time: number | null
+  end_time: number | null
+  object_count: number
+  line_crossing_count: number
+  zone_violation_count: number
+  average_dwell_time: number
+  traffic_volume: number
+  event_frequency: Record<string, number>
+  per_class_stats: Record<string, { object_count: number; event_count: number }>
+}
+
 async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`)
   if (!response.ok) {
@@ -116,4 +129,15 @@ export function listCameraLines(cameraId: string): Promise<Line[]> {
 
 export function getVideoStreamUrl(videoId: number): string {
   return `${API_BASE_URL}/videos/${videoId}/stream`
+}
+
+/**
+ * GET /analytics bundles 7 of Section 11's 8 analytics functions for one
+ * camera/time-range filter; `busiest_hours` isn't in that bundle (see
+ * TRACE_STUDY_GUIDE.md Section 19), so the dashboard computes it itself from
+ * `listCameraEvents`'s raw events -- see src/lib/analytics.ts.
+ */
+export function getAnalytics(cameraId?: string): Promise<AnalyticsSummary> {
+  const query = cameraId ? `?camera_id=${encodeURIComponent(cameraId)}` : ''
+  return apiGet<AnalyticsSummary>(`/analytics${query}`)
 }
