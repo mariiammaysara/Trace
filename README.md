@@ -70,52 +70,28 @@ Surveillance infrastructure generates millions of hours of unindexed video daily
 
 ## 2. System Architecture
 
+```mermaid
+flowchart LR
+    subgraph INGEST["1. Edge CV Worker"]
+        direction TB
+        CAM["RTSP / Video Stream"] --> YOLO["YOLOv8 Detector"]
+        YOLO --> BYTE["ByteTrack (Kalman)"]
+        BYTE --> HOM["Homography & Speed"]
+        HOM --> EVT["Deterministic Event Engine"]
+    end
+
+    subgraph BACKEND["2. Persistence & API Layer"]
+        direction TB
+        EVT -->|Batch Insert| DB[("PostgreSQL 16 Store")]
+        DB <--> API["FastAPI REST Endpoints"]
+    end
+
+    subgraph CLIENT["3. User Interfaces"]
+        direction TB
+        API <--> DASH["React 19 Operator Dashboard<br/>(Vector Overlays & HUD)"]
+        API <--> AGENT["Claude 3.5 Vision Agent<br/>(Tool-Grounded Investigation)"]
+    end
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                       TRACE SYSTEM TOPOLOGY                                            │
-├────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                                        │
-│   ┌──────────────────┐       ┌─────────────────────────────────────────────────────────┐               │
-│   │ Camera / Video   │ ───►  │                  CV INFERENCE WORKER                    │               │
-│   │ (RTSP / MP4)     │       │                                                         │               │
-│   └──────────────────┘       │  ┌─────────────────┐       ┌────────────────────────┐   │               │
-│                              │  │ YOLOv8 Detector │ ───►  │ ByteTracker (Kalman)   │   │               │
-│                              │  └─────────────────┘       └────────────────────────┘   │               │
-│                              │                                         │               │               │
-│                              │                                         ▼               │               │
-│                              │  ┌─────────────────┐       ┌────────────────────────┐   │               │
-│                              │  │ Event Engine    │ ◄───  │ Homography & Trajectory│   │               │
-│                              │  └─────────────────┘       └────────────────────────┘   │               │
-│                              └────────────────────────────────────┬────────────────────┘               │
-│                                                                   │                                    │
-│                                                Batch SQL Inserts  │                                    │
-│                                                                   ▼                                    │
-│                              ┌─────────────────────────────────────────────────────────┐               │
-│                              │             POSTGRESQL 16 TIME-SERIES STORE             │               │
-│                              │  (cameras, videos, tracked_objects, points, events)     │               │
-│                              └────────────────────────────┬────────────────────────────┘               │
-│                                                           │                                            │
-│                                             SQLAlchemy    │                                            │
-│                                                           ▼                                            │
-│   ┌────────────────────────────────────────────────────────────────────────────────────────────────┐   │
-│   │                                       FASTAPI BACKEND SERVICE                                  │   │
-│   │                                                                                                │   │
-│   │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌──────────────┐  │   │
-│   │  │ /cameras      │  │ /videos       │  │ /events       │  │ /analytics    │  │ /agent/query │  │   │
-│   │  └───────────────┘  └───────────────┘  └───────────────┘  └───────────────┘  └──────────────┘  │   │
-│   └───────────────────────────────┬────────────────────────────────────────┬───────────────────────┘   │
-│                                   │                                        │                           │
-│                     REST / JSON   │                          Claude Tool   │                           │
-│                                   ▼                          Calling API   ▼                           │
-│   ┌───────────────────────────────────────────────────┐      ┌─────────────────────────────────────┐   │
-│   │          REACT 19 OPERATOR DASHBOARD              │      │     ANTHROPIC CLAUDE 3.5 AGENT      │   │
-│   │  - Live HUD with Synced Vector Overlays           │      │  - Natural Language Video Q&A       │   │
-│   │  - Sub-second Incident Click-to-Seek              │      │  - Grounded Telemetry Querying      │   │
-│   │  - Spatial Analytics & Class Breakdown Charts     │      │  - Action Proposal/Approval Gating  │   │
-│   └───────────────────────────────────────────────────┘      └─────────────────────────────────────┘   │
-│                                                                                                        │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-### Architectural Layer Breakdown
 
 1. **Edge Computer Vision Worker (`src/detection/` & `src/tracking/`)**
    - Ingests raw video files or RTSP streams frame-by-frame via `FrameSource`.
@@ -138,29 +114,15 @@ Surveillance infrastructure generates millions of hours of unindexed video daily
 
 ## 3. Computer Vision & ML Pipeline
 
-```
-[Frame Ingestion] 
-       │ (1920x1080 BGR @ 30 FPS)
-       ▼
-[Letterbox Preprocessing] ──► Symmetrically resized to 640x640 with stride-32 padding
-       │
-       ▼
-[Detector Inference] ───────► Predicts bounding boxes B = [x_min, y_min, x_max, y_max, conf, class_id]
-       │
-       ▼
-[ByteTrack Association] ────► High-confidence match (conf >= 0.5) via Kalman Filter IoU
-       │                      Low-confidence match (0.1 <= conf < 0.5) recovery step
-       ▼
-[Trajectory Management] ────► TrackPoint generation, history buffer maintenance, EMA velocity smoothing
-       │
-       ▼
-[Geometric Transformation] ─► Footprint midpoint [x_center, y_max] projected via H matrix to world meters
-       │
-       ▼
-[Event Engine Evaluation] ──► Spatial tests (Shapely / ray-casting) & kinetic checks (overspeed / deceleration)
-       │
-       ▼
-[Postgres Batch Sync] ─────► Asynchronous batch flush of track coordinates & triggered incident records
+```mermaid
+flowchart TD
+    A["<b>1. Frame Ingestion</b><br/>1920x1080 BGR @ 30 FPS"] --> B["<b>2. Letterbox Preprocessing</b><br/>Resize to 640x640 with stride-32 padding"]
+    B --> C["<b>3. YOLOv8 Inference</b><br/>Bounding boxes [x1, y1, x2, y2, conf, class]"]
+    C --> D["<b>4. ByteTrack Association</b><br/>High-conf Kalman matching + Low-conf recovery"]
+    D --> E["<b>5. Trajectory Smoothing</b><br/>EMA filtering + TrackPoint history buffer"]
+    E --> F["<b>6. Planar Homography</b><br/>Footprint midpoint projected via 3x3 H matrix (meters)"]
+    F --> G["<b>7. Event Engine Evaluation</b><br/>Spatial point-in-polygon & kinetic anomaly triggers"]
+    G --> H[("<b>8. Database Batch Flush</b><br/>Asynchronous bulk insert to PostgreSQL 16")]
 ```
 
 ---
@@ -301,22 +263,12 @@ The TRACE operator dashboard is built with **React 19**, **Vite**, **Tailwind CS
 - **Brand Colors**: Slate / Deep Navy (`#2f4157`, `#567c8e`, `#a2c1d1`)
 - **Semantic Colors**: Danger Violation (`#c94c4c`), Warning (`#c58a24`), Success / Nominal (`#2e7d5b`)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ TRACE Sidebar  │ Header (Breadcrumb, Camera Selector, Live Sync, UTC HUD)   │
-│ (Brand, Nav,   ├────────────────────────────────────────────────────────────┤
-│  System Health,│ KPI Row: Active Cameras | Objects Tracked | Events | Stream│
-│  Station Info) ├──────────────────────────────────────┬─────────────────────┤
-│                │                                      │                     │
-│                │           LIVE VIDEO FEED            │    RECENT EVENTS    │
-│                │   (Telemetry HUD, Bounding Boxes,    │  (Severity Badges,  │
-│                │    Tracks, Zones, Lines, Scrubber)   │   Click-to-Seek)    │
-│                │                                      │                     │
-│                ├──────────────────────┬───────────────┴──┬──────────────────┤
-│                │ Object Distribution  │ Events Breakdown │ Camera Fleet     │
-│                │ (Class Breakdown)    │ (Violations/Act) │ (Status & Stats) │
-└────────────────┴──────────────────────┴──────────────────┴──────────────────┘
-```
+| Interface Module | Role & Interactive Capabilities |
+| :--- | :--- |
+| **Live Telemetry & Vector HUD** | Real-time camera feed with synchronized SVG tracks, detection bounding boxes, zone polygons, and directional tripwires |
+| **Forensic Incident Feed** | Chronological violation log with severity color codes and sub-second click-to-seek video jumping |
+| **Object Profile Panel** | Deep-dive lifecycle panel displaying total dwell time, camera trajectory paths, and linked violation history |
+| **Spatial Analytics & Metrics** | Real-time class distribution charts, event frequency breakdowns, and multi-camera fleet health status |
 
 ### Key UI Capabilities
 1. **Synchronized SVG Vector Overlays**: SVG coordinate projection layer rendered directly over `<video>` elements using `requestAnimationFrame` synchronization (never burned into the video file).
