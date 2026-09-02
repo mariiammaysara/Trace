@@ -1,0 +1,14 @@
+{
+  "camera_id": "demo-trafficlight",
+  "_comment": "Phase 20 Event Engine / Line Crossing demo -- 'Traffic light directing traffic' stock footage (data/demo_trafficlight.mp4). The 'entrance_line' below is a REAL, verified pixel-space tripwire: placed and confirmed by running the actual FrameSource->YoloDetector->ByteTracker pipeline against this file and reading a real tracked vehicle's trajectory (object_id=2, descending from pixel y~174 to y~402 before stopping at a red light) -- not guessed from a screenshot. The 'correspondences' below are ILLUSTRATIVE ONLY, same as configs/cameras/demo.json's own placeholder -- there is no real-world survey of this stock-footage intersection, so no speed/OVERSPEED claim is made for this camera (see scripts/persist_video.py's --speed-limit, set unreachably high when ingesting this camera specifically so OVERSPEED can never fire against this uncalibrated scale). Only LINE_CROSSED (and whatever else the real pipeline run actually produces) is claimed for this camera.",
+  "correspondences": [
+    { "pixel": [0, 0], "world": [0, 0] },
+    { "pixel": [100, 0], "world": [5, 0] },
+    { "pixel": [100, 100], "world": [5, 5] },
+    { "pixel": [0, 100], "world": [0, 5] }
+  ],
+  "lines": [
+    { "id": "crosswalk_tripwire", "start": [600, 340], "end": [950, 340] }
+  ],
+  "zones": []
+}

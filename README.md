@@ -17,6 +17,14 @@
 
 </div>
 
+<div align="center">
+
+![TRACE detection and tracking demo](docs/demo_hero.gif)
+
+*Real detection + tracking output from TRACE's default pipeline (YOLOv8n + ByteTrack) on real street-corner stock footage — live bounding boxes with persistent track IDs, no staged or hand-annotated data. The tracked vehicle in the center (`id=2`) is the same real object that triggers TRACE's one verified `LINE_CROSSED` event at t=9.5s — see [Key Features](#3-key-features) below.*
+
+</div>
+
 ---
 
 ## Table of Contents
@@ -128,6 +136,26 @@ RAW VIDEO → DETECTION → BYTE-TRACKING → HOMOGRAPHY → TRAJECTORY SYNTHESI
 - **Interactive Video Intelligence Dashboard**: High-density React operations console with sub-second event scrub jumping, live vector overlays, and camera fleet management.
 - **Tool-Using Vision Agent**: Conversational agent powered by Claude 3.5 Sonnet that uses real database tools to investigate incidents, summarize trends, and propose safe action policies.
 
+### Event Engine in Action (Real Footage)
+
+![TRACE Event Engine line-crossing demo](docs/demo_hero.gif)
+
+Real stock footage of a static street-corner intersection (`data/demo_trafficlight.mp4`), run through TRACE's actual detection → tracking → event pipeline (`scripts/persist_video.py`, camera `demo-trafficlight`) — not staged, not hand-annotated. Real, persisted results across the full 26.7s / 801-frame clip:
+
+| Real, persisted result | Value |
+| :--- | :--- |
+| Avg. detections/frame | 16.13 |
+| Confirmed tracks (unique `object_id`) | 130 |
+| **`LINE_CROSSED` events** | **1** (`object_id=2`, t=9.5s, right→left) |
+| `STOPPED` events | 30 |
+| `OBJECT_APPEARED` / `OBJECT_DISAPPEARED` | 130 / 112 |
+
+Only **one** real line-crossing occurs in this clip — reported exactly as measured, not implied to be more. This camera has only a placeholder/illustrative homography (`configs/cameras/demo-trafficlight.json`, same convention as the built-in `demo` camera's own config) since no real-world survey exists for this stock footage, so no speed or `OVERSPEED` claim is made here — `LINE_CROSSED` is pure pixel-space line-segment geometry and does not depend on the homography's world scale.
+
+**Known condition on this clip**: a permanent tilt-shift/depth-of-field effect in the source footage blurs everything outside a mid-frame focal band. Measured effect (not assumed): 8.12 detections/frame at 0.541 avg. confidence in the sharp band vs. 7.10 detections/frame at 0.496 avg. confidence in the blurred distant band — a modest (~8% relative) reduction, not a severe collapse.
+
+**Standing note**: none of TRACE's three demo/stock videos (this one, plus two aerial clips used for benchmarking only — see [Section 7](#7-inference-benchmarks--performance)) have ground-truth annotations. No Precision/Recall/mAP/MOTA/IDF1 claim is made from any of them — those numbers come exclusively from `data/sample.mp4`'s hand-verified ground truth ([Section 6](#6-formal-evaluation--accuracy)).
+
 ---
 
 ## 4. Computer Vision & ML Pipeline
@@ -200,7 +228,9 @@ Accuracy evaluation is performed across two distinct benchmarks:
 | **YOLOv8n Pretrained** | `bus` | 0.632 | 1.000 | **0.995** | **0.895** |
 | **YOLOv8n Pretrained** | `truck` | 0.814 | 0.500 | **0.552** | **0.440** |
 | **YOLOv8n Pretrained** | `bicycle` | 0.521 | 1.000 | **0.995** | **0.895** |
-| **Stage 2 Domain Adapted** | `person` (Surveillance) | **0.990** | **1.000** | **0.995** | **0.697** |
+| **Stage 2 Domain Adapted** | `person` (Surveillance) | **0.003** | **1.000** | **0.995** | **0.697** |
+
+*Stage 2's precision never recovered from Stage 1's collapse (both 0.003 — a ~99.7% false-positive rate on real footage); only mAP50-95 improved (0.309 → 0.697) on this one memorized real clip. This does **not** demonstrate generalization — see Section 5 and `TRACE_STUDY_GUIDE.md` Section 2/20 for the full domain-adaptation failure analysis.*
 
 ### Multi-Object Tracking Evaluation (CLEAR MOT & ID Metrics)
 
@@ -208,12 +238,16 @@ Evaluated across 244 continuous video frames under challenging camera angles:
 
 | Evaluation Scenario | MOTA ↑ | IDF1 ↑ | ID Switches ↓ | False Positives ↓ | False Negatives ↓ | Matches |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Real Video Footage (244 frames)** | **1.000** | **1.000** | **0** | **0** | **0** | **244** |
-| **Synthetic Crossing (Occlusion Test)** | **1.000** | **1.000** | **0** | **0** | **0** | **40** |
+| **Real Video Footage (244 frames, Pretrained Baseline)** | **1.000** | **1.000** | **0** | **0** | **0** | **244** |
+| **Synthetic Crossing (Occlusion Test, ground-truth boxes)** | **1.000** | **1.000** | **0** | **0** | **0** | **40** |
 
 *Definitions:*
 - $\text{MOTA} = 1 - \frac{\text{FN} + \text{FP} + \text{IDSW}}{\text{GT}}$ (Multi-Object Tracking Accuracy)
 - $\text{IDF1} = \frac{2\text{IDTP}}{2\text{IDTP} + \text{IDFP} + \text{IDFN}}$ (Identification F1 Score measuring trajectory consistency)
+
+**These 1.000 scores are not general tracking performance — each came from one narrow, specific test, not a general benchmark:**
+- *Real Video Footage* row: only the **pretrained** YOLOv8n+ByteTrack combination, tracking **one** continuously-visible person across a single near-static 244-frame clip (`data/sample.mp4`) — a scene with no occlusions, no crossings, and nothing for a track id to switch with. Run through the exact same real-footage pipeline, the domain-adapted **Stage 1 and Stage 2** checkpoints produced a complete tracking failure: **MOTA = IDF1 = 0.000, 0/244 matches, 244/244 misses** — a direct consequence of their collapsed detection precision (0.003, see table above). This 0.0 collapse is not shown as a row here; see `TRACE_STUDY_GUIDE.md` Section 15 for the full three-model breakdown and `evaluation/results/tracking_comparison.json` for the raw numbers.
+- *Synthetic Crossing* row: a controlled 2-object test where **ground-truth boxes were fed directly into ByteTrack** (no detector in the loop), isolating the tracker's motion-prediction behavior at one specific crossing point. It does not test detection accuracy and does not generalize to harder real-world conditions (occlusion, more objects, non-constant velocity).
 
 ---
 
@@ -231,6 +265,20 @@ Measured on dedicated benchmark scripts (`benchmarks/benchmark.py`) processing 2
 *Engineering Note:*
 - **Tracking overhead is negligible** (< 1.5 ms per frame, > 700 FPS), demonstrating that ByteTrack adds virtually zero latency penalty to the pipeline.
 - For production GPU deployments (NVIDIA Jetson / T4 / RTX), TensorRT FP16 yields **> 65 FPS** end-to-end throughput. Export utilities are checked in under `benchmarks/export_tensorrt.py`.
+
+### Demo Footage Benchmarks (Real Stock Video — Separate From the Formal Benchmark Above)
+
+Same reproducible harness (`benchmarks/benchmark.py --source-video`), run against the three real stock videos evaluated for dashboard/README demo use (`yolov8n.pt`, confidence=0.25, CPU). These are real FPS/latency measurements, **not** accuracy claims (see the standing note in [Section 3](#3-key-features)) — reported separately per video, never averaged together:
+
+| Video | Frames | Detection FPS | Tracking FPS | End-to-End FPS | Mean / p95 Latency (end-to-end) | CPU (process) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `demo_trafficlight.mp4` | 801 | 16.27 | 329.78 | 14.47 | 69.04 ms / 82.53 ms | 795.5% |
+| `demo_intersection.mp4` | 472 | 15.12 | 3319.92 | 12.57 | 79.44 ms / 99.20 ms | 827.6% |
+| `demo_junction_trimmed.mp4` | 384 | 16.51 | 3021.79 | 14.88 | 66.97 ms / 76.89 ms | 798.9% |
+
+GPU memory: `measured: false` on all three (`torch.cuda.is_available()` is `False` in this environment — a CPU-only PyTorch build; a physical GPU is detected via `nvidia-smi` but unusable by this install).
+
+`demo_intersection.mp4` and `demo_junction_trimmed.mp4` are **benchmark-only** in this table — real FPS/latency data points, no detection/tracking/event showcase. Both are straight-down aerial drone footage on which TRACE's default detector produces near-zero detections (0.019 and 0.026 avg. detections/frame, 0 and 1 confirmed tracks respectively, vs. 16.13 avg. detections/frame on the street-level footage above) — a real, measured limitation. Full writeup in [Section 17](#17-engineering-tradeoffs--limitations) and `TRACE_STUDY_GUIDE.md` Section 17.
 
 ---
 
@@ -261,8 +309,10 @@ The TRACE operator dashboard is built with **React 19**, **Vite**, **Tailwind CS
 ### Key UI Capabilities
 1. **Synchronized SVG Vector Overlays**: SVG coordinate projection layer rendered directly over `<video>` elements using `requestAnimationFrame` synchronization (never burned into the video file).
 2. **Sub-Second Incident Click-to-Seek**: Clicking any incident in the **Recent Events** feed instantly jumps the video player to that exact millisecond.
-3. **Multi-Camera Fleet Management**: Switch feeds on the fly with live status badges.
-4. **Comprehensive Data Integrity**: 100% of dashboard cards, statistics, and graphs reflect real database queries without mock placeholders.
+3. **Pre-Recorded Demo Scenarios (Phase 20)**: Interactive guided walkthroughs for **Restricted Zone Intrusion**, **Tripwire Line Crossing**, **Track Lifecycle**, and a real street-footage **Line Crossing** scenario (`demo-trafficlight` camera) — 4 scenarios total, each powered strictly by real computer vision data, no scripted/fabricated events.
+4. **Real-Time In-Video Event Surfacing**: Prominent floating incident toasts appear automatically as playback reaches real event timestamps, offering one-click jumps to deep forensic investigation.
+5. **Multi-Camera Fleet Management**: Switch feeds on the fly with live status badges.
+6. **Comprehensive Data Integrity**: 100% of dashboard cards, statistics, and graphs reflect real database queries without mock placeholders.
 
 ---
 
@@ -539,6 +589,7 @@ cd dashboard && npm run lint
 1. **Planar Homography Assumption**: Homography calculations assume a flat ground plane ($Z = 0$). Severe elevation changes (e.g. multi-level parking ramps) introduce metric scale distortion unless 3D LiDAR or multi-view geometry is applied.
 2. **Extreme Occlusion Limits**: While ByteTrack maintains track IDs through brief occlusions via Kalman prediction, prolonged full occlusions (> 30 frames) require visual re-identification embeddings (ReID) to re-acquire the same object ID.
 3. **Hardware Acceleration**: CPU inference operates at ~5.5 FPS (FP32). Real-time production multi-stream ingestion (> 30 FPS across 4+ streams) requires GPU acceleration via TensorRT or ONNX Runtime with CUDA/TensorRT execution providers.
+4. **Nadir/Aerial Camera Angle Detection Gap**: TRACE's default pretrained YOLOv8n detector produces near-zero detections on straight-down drone/aerial footage — measured 0.02–0.03 avg. detections/frame vs. 16.13 avg. detections/frame on comparable street-level footage, at the default 0.25 confidence threshold (see [Section 7](#7-inference-benchmarks--performance)). Likely cause: COCO's vehicle/person training images are almost entirely oblique or ground-level, not nadir viewpoints. Full symptom/cause/diagnosis/tradeoffs writeup in `TRACE_STUDY_GUIDE.md` Section 17.
 
 ---
 
@@ -548,6 +599,7 @@ cd dashboard && npm run lint
 - [ ] **Zero-Shot Open-Vocabulary Detection**: Integration of YOLO-World for arbitrary textual class queries without retraining.
 - [ ] **Edge Streaming Gateway**: RTSP and WebRTC live stream ingestion pipeline with hardware-accelerated video decoding (NVDEC).
 - [ ] **Edge Fleet Management**: Over-the-air deployment of quantized TensorRT models to NVIDIA Jetson edge nodes.
+- [ ] **Speed Estimation Demo Footage** `[FUTURE WORK]`: none of TRACE's current demo videos have a real, surveyed camera calibration. A legitimate speed-estimation showcase needs real-world measured pixel↔world correspondences for a static camera scene, which we don't currently have — deliberately not faked with a placeholder homography (see [Section 3](#3-key-features)).
 
 ---
 

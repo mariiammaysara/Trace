@@ -1,0 +1,7 @@
+=== pytorch_pretrained_demo_junction_trimmed (yolov8n.pt) ===
+frames processed: 384 (warmup: 10)
+detection FPS:  16.51   (mean 60.58 ms, p95 70.57 ms)
+tracking FPS:   3021.79   (mean 0.33 ms, p95 0.59 ms)
+end-to-end FPS: 14.88   (mean 66.97 ms, p95 76.89 ms)
+CPU (process):  798.9%
+GPU memory:     not measured -- torch.cuda.is_available() is False (installed PyTorch is 2.13.0+cpu, a CPU-only build) -- no CUDA device for this process to allocate GPU memory on

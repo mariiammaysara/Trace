@@ -1,0 +1,7 @@
+=== pytorch_pretrained_demo_trafficlight (yolov8n.pt) ===
+frames processed: 801 (warmup: 10)
+detection FPS:  16.27   (mean 61.48 ms, p95 73.79 ms)
+tracking FPS:   329.78   (mean 3.03 ms, p95 4.21 ms)
+end-to-end FPS: 14.47   (mean 69.04 ms, p95 82.53 ms)
+CPU (process):  795.5%
+GPU memory:     not measured -- torch.cuda.is_available() is False (installed PyTorch is 2.13.0+cpu, a CPU-only build) -- no CUDA device for this process to allocate GPU memory on

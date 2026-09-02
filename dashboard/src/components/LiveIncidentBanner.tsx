@@ -2,9 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { EventBadge } from '@/components/EventBadge'
 import { Button } from '@/components/ui/button'
 import type { TraceEvent } from '@/lib/api'
-import { formatIncidentId } from '@/lib/incident'
 import { ArrowRight, BellRing, Sparkles, X } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 interface LiveIncidentBannerProps {
   currentTime: number
@@ -49,8 +47,6 @@ export function LiveIncidentBanner({
   if (!activeFiredEvent || isDismissed) {
     return null
   }
-
-  const incidentId = formatIncidentId(activeFiredEvent.id)
 
   return (
     <div

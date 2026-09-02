@@ -210,13 +210,7 @@ function App() {
               onSelectCamera={setSelectedCameraId}
             />
           )}
-          {activeView === 'alerts' && (
-            <AlertsView
-              cameras={cameras}
-              selectedCameraId={selectedCameraId}
-              onSelectCamera={setSelectedCameraId}
-            />
-          )}
+          {activeView === 'alerts' && <AlertsView cameras={cameras} />}
           {activeView === 'agent' && <VisionAgentView />}
           {activeView === 'evaluation' && <EvaluationView />}
         </main>

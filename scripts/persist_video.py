@@ -92,6 +92,23 @@ def main() -> None:
         help="Ultralytics weights path/name; env: TRACE_DETECTOR_WEIGHTS (default: %(default)s)",
     )
     parser.add_argument("--commit-every", type=int, default=20, help="commit to the database every N frames (default: 20)")
+    parser.add_argument(
+        "--speed-limit",
+        type=float,
+        default=5.0,
+        help="OVERSPEED threshold, world units/s (default: 5.0, matches EventEngine's own default). "
+        "Set unreachably high (e.g. 1e9) for a camera with only a placeholder/illustrative homography, "
+        "so OVERSPEED never fires against an uncalibrated world scale.",
+    )
+    parser.add_argument(
+        "--min-deceleration-magnitude",
+        type=float,
+        default=500.0,
+        help="SUDDEN_STOP threshold, world units/s^2 (default: 500.0, matches EventEngine's own default). "
+        "Same reasoning as --speed-limit: SUDDEN_STOP's deceleration_magnitude is computed via the "
+        "homography's world scale, so set this unreachably high for a camera with only a placeholder "
+        "homography, or SUDDEN_STOP fires on the fake world-space speed swings, not real events.",
+    )
     args = parser.parse_args()
 
     class_allowlist = (
@@ -134,7 +151,14 @@ def main() -> None:
             class_allowlist=class_allowlist,
         )
         tracker = ByteTracker()
-        event_engine = EventEngine(camera_id=args.camera_id, homography=homography, lines=lines, zones=zones)
+        event_engine = EventEngine(
+            camera_id=args.camera_id,
+            homography=homography,
+            lines=lines,
+            zones=zones,
+            speed_limit=args.speed_limit,
+            min_deceleration_magnitude=args.min_deceleration_magnitude,
+        )
 
         total_events = 0
         total_track_points = 0

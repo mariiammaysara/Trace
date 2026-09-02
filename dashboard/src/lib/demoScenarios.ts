@@ -6,11 +6,22 @@
  * without requiring live physical RTSP cameras or waiting for random events.
  *
  * HONEST FOOTPRINT RULE:
- * Every scenario here maps strictly to REAL footage (data/sample.mp4) and REAL
- * events produced by our event engine on camera 'demo'. We deliberately DO NOT
- * offer an OVERSPEED scenario because sample.mp4 contains a pedestrian walking,
- * not a speeding vehicle. Fabricating synthetic scenarios without real footage
- * is prohibited.
+ * Every scenario here maps strictly to real footage and real events produced
+ * by our event engine on the named camera. We deliberately DO NOT offer an
+ * OVERSPEED scenario on any camera below because none of them have a real,
+ * surveyed camera calibration -- see configs/cameras/*.json's own comments.
+ * Fabricating synthetic scenarios without real footage is prohibited.
+ *
+ * Phase 20 update: two stock videos of the original three considered for
+ * this phase ("Busy intersection aerial view", "Vehicular movement... at a
+ * junction") were evaluated and found unusable for a detection/tracking
+ * scenario -- TRACE's pretrained YOLOv8n detector has a real, measured
+ * domain gap on straight-down/nadir drone footage (avg. 0.01-0.03
+ * detections/frame at the default 0.25 confidence threshold, vs. 16.1/frame
+ * on street-level footage of comparable density -- see
+ * TRACE_STUDY_GUIDE.md Section 17). They are used for benchmarking only
+ * (benchmarks/results/), not as an interactive scenario here, since there
+ * is nothing real for a click-through demo to show.
  */
 
 export interface DemoScenario {
@@ -68,5 +79,19 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     keyLearnings:
       'Demonstrates YOLOv8 detection bounding boxes, ByteTrack two-stage Hungarian association, and ground-plane trajectory accumulation.',
     severity: 'info',
+  },
+  {
+    id: 'trafficlight-line-crossing',
+    title: 'Street Intersection Vehicle Line Crossing',
+    category: 'Access Control',
+    description:
+      'Real stock footage of a static street-corner traffic light. A tracked vehicle (object_id=2) crosses a calibrated tripwire line placed across the crosswalk, triggering a real LINE_CROSSED event -- verified by actually running the pipeline, not assumed.',
+    cameraId: 'demo-trafficlight',
+    videoName: 'demo_trafficlight.mp4',
+    targetEventType: 'LINE_CROSSED',
+    startTime: 8.5,
+    keyLearnings:
+      'Demonstrates the same pixel-space line-segment intersection geometry as the "demo" camera scenario above, this time against real (non-synthetic) street footage with a static camera. This camera has only an illustrative/placeholder homography (no real-world survey exists for this stock footage), so no speed or OVERSPEED claim is made here -- only LINE_CROSSED, which is pure pixel-space geometry and does not depend on the homography scale.',
+    severity: 'warning',
   },
 ]

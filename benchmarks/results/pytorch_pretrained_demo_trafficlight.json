@@ -1,0 +1,40 @@
+{
+  "model_path": "yolov8n.pt",
+  "source_video": "data\\demo_trafficlight.mp4",
+  "frames_processed": 801,
+  "warmup_frames": 10,
+  "detection_fps": 16.265055738034825,
+  "tracking_fps": 329.7754096258453,
+  "end_to_end_fps": 14.471190243200434,
+  "detection_latency": {
+    "count": 801,
+    "mean_ms": 61.4814985024344,
+    "median_ms": 59.33059984818101,
+    "p95_ms": 73.78809992223978,
+    "min_ms": 45.58759997598827,
+    "max_ms": 223.12610014341772
+  },
+  "tracking_latency": {
+    "count": 801,
+    "mean_ms": 3.03236678906585,
+    "median_ms": 2.922399900853634,
+    "p95_ms": 4.211500054225326,
+    "min_ms": 1.9111000001430511,
+    "max_ms": 10.035400046035647
+  },
+  "end_to_end_latency": {
+    "count": 801,
+    "mean_ms": 69.03595392959664,
+    "median_ms": 66.65110005997121,
+    "p95_ms": 82.5324000325054,
+    "min_ms": 52.678999956697226,
+    "max_ms": 232.89259988814592
+  },
+  "cpu_percent_process": 795.5,
+  "wall_elapsed_seconds": 55.35135579993948,
+  "gpu_memory": {
+    "measured": false,
+    "reason": "torch.cuda.is_available() is False (installed PyTorch is 2.13.0+cpu, a CPU-only build) -- no CUDA device for this process to allocate GPU memory on",
+    "physical_gpu_detected": "NVIDIA GeForce RTX 4050 Laptop GPU"
+  }
+}
