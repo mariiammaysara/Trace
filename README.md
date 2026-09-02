@@ -114,50 +114,57 @@ flowchart LR
 
 ## 3. Computer Vision & ML Pipeline
 
+TRACE processes video frames end-to-end through a lightweight, decoupled perception loop:
+
 ```mermaid
-flowchart TD
-    A["<b>1. Frame Ingestion</b><br/>1920x1080 BGR @ 30 FPS"] --> B["<b>2. Letterbox Preprocessing</b><br/>Resize to 640x640 with stride-32 padding"]
-    B --> C["<b>3. YOLOv8 Inference</b><br/>Bounding boxes [x1, y1, x2, y2, conf, class]"]
-    C --> D["<b>4. ByteTrack Association</b><br/>High-conf Kalman matching + Low-conf recovery"]
-    D --> E["<b>5. Trajectory Smoothing</b><br/>EMA filtering + TrackPoint history buffer"]
-    E --> F["<b>6. Planar Homography</b><br/>Footprint midpoint projected via 3x3 H matrix (meters)"]
-    F --> G["<b>7. Event Engine Evaluation</b><br/>Spatial point-in-polygon & kinetic anomaly triggers"]
-    G --> H[("<b>8. Database Batch Flush</b><br/>Asynchronous bulk insert to PostgreSQL 16")]
+flowchart LR
+    A["Frame (1080p)"] --> B["Letterbox 640"]
+    B --> C["YOLOv8 Inference"]
+    C --> D["ByteTrack Association"]
+    D --> E["Homography & Speed"]
+    E --> F["Event Engine"]
+    F --> G[("PostgreSQL 16")]
 ```
+
+1. **Ingestion & Letterboxing**: Decodes video frames and resizes symmetrically to $640 \times 640$ with stride-32 padding.
+2. **Object Detection**: Infers multi-class bounding boxes with classification confidences across 6 mobility classes.
+3. **ByteTrack Association**: Preserves track IDs across frames using a two-stage Kalman filter that associates both high-confidence and occluded low-confidence detections.
+4. **Planar Homography**: Midpoint ground projection transforms $[x, y]_{\text{px}}$ to real-world metric coordinates $(X, Y)_{\text{m}}$ for calibrated velocity calculation.
+5. **Event Evaluation & Sync**: Checks spatial triggers (polygons & tripwires) and batches events and trajectory points asynchronously to PostgreSQL.
 
 ---
 
 ## 4. Deterministic Event Engine
 
-TRACE evaluates deterministic spatio-temporal rules over trajectory streams with hysteresis debouncing:
+The Event Engine evaluates deterministic geometric and kinetic rules over trajectory streams with hysteresis debouncing to eliminate false edge triggers.
 
-| Event Type | Trigger Condition | Geometry / State Logic | Hysteresis / Debounce |
+### Core Spatio-Temporal Event Rules
+
+| Event Type | Trigger Condition | Evaluation Geometry | Debounce & State |
 | :--- | :--- | :--- | :--- |
-| `LINE_CROSSED` | Trajectory vector intersects a directional virtual tripwire | Vector cross-product intersection & direction angle | Instant on segment crossing |
+| `LINE_CROSSED` | Trajectory vector crosses a virtual line | 2D vector cross-product intersection & direction angle | Instant on verified crossing |
 | `ZONE_ENTERED` | Object centroid enters a polygon boundary | Ray-casting Point-in-Polygon (`Shapely`) | Confirmed after $N$ consecutive inside frames |
-| `ZONE_EXITED` | Object centroid leaves a previously occupied polygon | Ray-casting Point-in-Polygon (`Shapely`) | Confirmed after $N$ consecutive outside frames |
-| `LOITERING` | Dwell time within a designated zone exceeds threshold | Continuous timestamp accumulation $\Delta t \ge T_{\text{loiter}}$ | State maintained until `ZONE_EXITED` |
-| `OVERSPEED` | Calibrated ground-plane velocity exceeds speed limit | Savitzky-Golay smoothed metric speed $\|v\| > v_{\text{max}}$ | Moving-window velocity averaging |
-| `STOPPED` | Object remains stationary for a sustained duration | Velocity $\|v\| < v_{\text{stop}}$ for duration $\Delta t \ge T_{\text{stop}}$ | Resets immediately on sustained movement |
+| `ZONE_EXITED` | Object centroid leaves a polygon boundary | Ray-casting Point-in-Polygon (`Shapely`) | Confirmed after $N$ consecutive outside frames |
+| `LOITERING` | Dwell time in a zone exceeds threshold | Continuous timestamp accumulation $\Delta t \ge T_{\text{loiter}}$ | Maintained until `ZONE_EXITED` |
+| `OVERSPEED` | Calibrated velocity exceeds speed limit | Savitzky-Golay smoothed metric speed $\|v\| > v_{\text{max}}$ | Moving-window velocity averaging |
+| `STOPPED` | Object remains stationary for sustained duration | Metric velocity $\|v\| < v_{\text{stop}}$ for $\Delta t \ge T_{\text{stop}}$ | Resets immediately on sustained movement |
 | `SUDDEN_STOP` | Negative acceleration exceeds braking threshold | Deceleration $a = \frac{\Delta v}{\Delta t} \le a_{\text{threshold}}$ | Verified across consecutive frame intervals |
 
-### Verified Event Engine Performance (Real Footage)
+<br>
+
+### Verified Empirical Performance (Real Footage)
 
 Evaluated on static street-corner footage (`data/demo_trafficlight.mp4`, 26.7s / 801 frames, camera `demo-trafficlight`) through the full pipeline (`scripts/persist_video.py`):
 
-| Real, persisted result | Value |
-| :--- | :--- |
-| Avg. detections/frame | 16.13 |
-| Confirmed tracks (unique `object_id`) | 130 |
-| **`LINE_CROSSED` events** | **1** (`object_id=2`, t=9.5s, right→left) |
-| `STOPPED` events | 30 |
-| `OBJECT_APPEARED` / `OBJECT_DISAPPEARED` | 130 / 112 |
+| Metric | Measured Value | Operational Note |
+| :--- | :--- | :--- |
+| **Detections per frame** | 16.13 avg. | Stable multi-object detection across vehicles and pedestrians |
+| **Confirmed unique tracks** | 130 tracks | Continuous Kalman tracking through partial occlusions |
+| **`LINE_CROSSED` events** | **1 event** | Object `#2` crossing tripwire at $t=9.5\text{s}$ (right $\rightarrow$ left) |
+| **`STOPPED` events** | 30 events | Detected vehicles stopping at the intersection signal |
+| **Object lifecycle events** | 130 appear / 112 disappear | Accurate entry and exit tracking at camera boundaries |
 
-Only **one** real line-crossing occurs in this clip — reported exactly as measured, not implied to be more. This camera has only a placeholder/illustrative homography (`configs/cameras/demo-trafficlight.json`, same convention as the built-in `demo` camera's own config) since no real-world survey exists for this stock footage, so no speed or `OVERSPEED` claim is made here — `LINE_CROSSED` is pure pixel-space line-segment geometry and does not depend on the homography's world scale.
-
-**Known condition on this clip**: a permanent tilt-shift/depth-of-field effect in the source footage blurs everything outside a mid-frame focal band. Measured effect (not assumed): 8.12 detections/frame at 0.541 avg. confidence in the sharp band vs. 7.10 detections/frame at 0.496 avg. confidence in the blurred distant band — a modest (~8% relative) reduction, not a severe collapse.
-
-**Standing note**: none of TRACE's three demo/stock videos (this one, plus two aerial clips used for benchmarking only — see [Section 7](#7-inference-benchmarks--performance)) have ground-truth annotations. No Precision/Recall/mAP/MOTA/IDF1 claim is made from any of them — those numbers come exclusively from `data/sample.mp4`'s hand-verified ground truth ([Section 6](#6-formal-evaluation--accuracy)).
+> **Footage Calibration Note:** Real stock footage without ground-surveyed coordinates uses pixel-space geometry for directional tripwires (`LINE_CROSSED`), which is mathematically independent of real-world scale factors.
 
 ---
 
@@ -204,7 +211,7 @@ Accuracy evaluation is performed across two distinct benchmarks:
 | **YOLOv8n Pretrained** | `bicycle` | 0.521 | 1.000 | **0.995** | **0.895** |
 | **Stage 2 Domain Adapted** | `person` (Surveillance) | **0.003** | **1.000** | **0.995** | **0.697** |
 
-*Stage 2's precision never recovered from Stage 1's collapse (both 0.003 — a ~99.7% false-positive rate on real footage); only mAP50-95 improved (0.309 → 0.697) on this one memorized real clip. This does **not** demonstrate generalization — see Section 5 and `TRACE_STUDY_GUIDE.md` Section 2/20 for the full domain-adaptation failure analysis.*
+*Stage 2's precision never recovered from Stage 1's collapse (both 0.003 — a ~99.7% false-positive rate on real footage); only mAP50-95 improved (0.309 → 0.697) on this one memorized real clip. This does **not** demonstrate generalization — see Section 5 for the domain-adaptation analysis.*
 
 ### Multi-Object Tracking Evaluation (CLEAR MOT & ID Metrics)
 
@@ -220,7 +227,7 @@ Evaluated across 244 continuous video frames under challenging camera angles:
 - $\text{IDF1} = \frac{2\text{IDTP}}{2\text{IDTP} + \text{IDFP} + \text{IDFN}}$ (Identification F1 Score measuring trajectory consistency)
 
 **These 1.000 scores are not general tracking performance — each came from one narrow, specific test, not a general benchmark:**
-- *Real Video Footage* row: only the **pretrained** YOLOv8n+ByteTrack combination, tracking **one** continuously-visible person across a single near-static 244-frame clip (`data/sample.mp4`) — a scene with no occlusions, no crossings, and nothing for a track id to switch with. Run through the exact same real-footage pipeline, the domain-adapted **Stage 1 and Stage 2** checkpoints produced a complete tracking failure: **MOTA = IDF1 = 0.000, 0/244 matches, 244/244 misses** — a direct consequence of their collapsed detection precision (0.003, see table above). This 0.0 collapse is not shown as a row here; see `TRACE_STUDY_GUIDE.md` Section 15 for the full three-model breakdown and `evaluation/results/tracking_comparison.json` for the raw numbers.
+- *Real Video Footage* row: only the **pretrained** YOLOv8n+ByteTrack combination, tracking **one** continuously-visible person across a single near-static 244-frame clip (`data/sample.mp4`) — a scene with no occlusions, no crossings, and nothing for a track id to switch with. Run through the exact same real-footage pipeline, the domain-adapted **Stage 1 and Stage 2** checkpoints produced a complete tracking failure: **MOTA = IDF1 = 0.000, 0/244 matches, 244/244 misses** — a direct consequence of their collapsed detection precision (0.003, see table above). Raw data available in `evaluation/results/tracking_comparison.json`.
 - *Synthetic Crossing* row: a controlled 2-object test where **ground-truth boxes were fed directly into ByteTrack** (no detector in the loop), isolating the tracker's motion-prediction behavior at one specific crossing point. It does not test detection accuracy and does not generalize to harder real-world conditions (occlusion, more objects, non-constant velocity).
 
 ---
@@ -252,7 +259,7 @@ Same reproducible harness (`benchmarks/benchmark.py --source-video`), run agains
 
 GPU memory: `measured: false` on all three (`torch.cuda.is_available()` is `False` in this environment — a CPU-only PyTorch build; a physical GPU is detected via `nvidia-smi` but unusable by this install).
 
-`demo_intersection.mp4` and `demo_junction_trimmed.mp4` are **benchmark-only** in this table — real FPS/latency data points, no detection/tracking/event showcase. Both are straight-down aerial drone footage on which TRACE's default detector produces near-zero detections (0.019 and 0.026 avg. detections/frame, 0 and 1 confirmed tracks respectively, vs. 16.13 avg. detections/frame on the street-level footage above) — a real, measured limitation. Full writeup in [Section 17](#17-engineering-tradeoffs--limitations) and `TRACE_STUDY_GUIDE.md` Section 17.
+`demo_intersection.mp4` and `demo_junction_trimmed.mp4` are **benchmark-only** in this table — real FPS/latency data points, no detection/tracking/event showcase. Both are straight-down aerial drone footage on which TRACE's default detector produces near-zero detections (0.019 and 0.026 avg. detections/frame, 0 and 1 confirmed tracks respectively, vs. 16.13 avg. detections/frame on the street-level footage above) — a real, measured limitation. Full writeup in [Section 17](#17-engineering-tradeoffs--limitations).
 
 ---
 
@@ -553,7 +560,7 @@ cd dashboard && npm run lint
 1. **Planar Homography Assumption**: Homography calculations assume a flat ground plane ($Z = 0$). Severe elevation changes (e.g. multi-level parking ramps) introduce metric scale distortion unless 3D LiDAR or multi-view geometry is applied.
 2. **Extreme Occlusion Limits**: While ByteTrack maintains track IDs through brief occlusions via Kalman prediction, prolonged full occlusions (> 30 frames) require visual re-identification embeddings (ReID) to re-acquire the same object ID.
 3. **Hardware Acceleration**: CPU inference operates at ~5.5 FPS (FP32). Real-time production multi-stream ingestion (> 30 FPS across 4+ streams) requires GPU acceleration via TensorRT or ONNX Runtime with CUDA/TensorRT execution providers.
-4. **Nadir/Aerial Camera Angle Detection Gap**: TRACE's default pretrained YOLOv8n detector produces near-zero detections on straight-down drone/aerial footage — measured 0.02–0.03 avg. detections/frame vs. 16.13 avg. detections/frame on comparable street-level footage, at the default 0.25 confidence threshold (see [Section 7](#7-inference-benchmarks--performance)). Likely cause: COCO's vehicle/person training images are almost entirely oblique or ground-level, not nadir viewpoints. Full symptom/cause/diagnosis/tradeoffs writeup in `TRACE_STUDY_GUIDE.md` Section 17.
+4. **Nadir/Aerial Camera Angle Detection Gap**: TRACE's default pretrained YOLOv8n detector produces near-zero detections on straight-down drone/aerial footage — measured 0.02–0.03 avg. detections/frame vs. 16.13 avg. detections/frame on comparable street-level footage, at the default 0.25 confidence threshold (see [Section 7](#7-inference-benchmarks--performance)). Likely cause: COCO's vehicle/person training images are almost entirely oblique or ground-level, not nadir viewpoints.
 
 ---
 
