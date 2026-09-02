@@ -29,4 +29,28 @@
   --color-warning: #c58a24; /* e.g. approaching a threshold, degraded confidence */
   --color-danger: #c94c4c; /* e.g. OVERSPEED, ZONE_ENTERED on a restricted zone, any violation */
   --color-info: #567c8e; /* neutral informational states -- reuses brand secondary, not a new blue */
+
+  /*
+   * Text hierarchy ("ink" scale) -- every navy tint below is derived from
+   * --color-primary, NOT from --color-secondary. --color-secondary is a
+   * BRAND/interactive color (buttons, active nav, selected states); reusing
+   * it as a body-text color was the original bug -- it conflated "this is
+   * clickable/emphasized" with "this is quiet text," and it landed right at
+   * the legal contrast floor (~4.5:1) for a role that needed to be clearly
+   * readable, not merely passable. These four tiers are what components
+   * should reach for instead. Contrast ratios below are against
+   * --color-surface (#fff), computed with the WCAG relative-luminance
+   * formula -- re-check if either endpoint ever changes.
+   */
+  --text-primary: #2f4157; /* = --color-primary. ~10.4:1. Headings, KPI values, high-emphasis body. */
+  --text-secondary: #47576a; /* ~7.4:1. The default body/UI text color -- nav labels, section titles, most copy. */
+  --text-tertiary: #636e81; /* ~5.2:1. De-emphasized metadata: timestamps, fine print, hints. Still always legible. */
+  --text-disabled: #8b95a2; /* ~3.0:1. Reserved for genuinely disabled controls only -- never for normal quiet text. */
+
+  /* Same four-tier idea, for the sidebar/HUD surfaces that sit on
+     --color-primary (navy) instead of --color-surface (white). Ratios below
+     are against #2f4157. */
+  --text-on-dark: #ffffff; /* ~10.4:1. Wordmark, active nav label, high-emphasis text on navy. */
+  --text-on-dark-quiet: #d5d9dd; /* ~7.4:1. Default nav-label/body text on navy. */
+  --text-on-dark-subtle: #b6bdc4; /* ~5.5:1. De-emphasized captions on navy (section eyebrows, footnotes). */
 }

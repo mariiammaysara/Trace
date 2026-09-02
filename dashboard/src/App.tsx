@@ -3,20 +3,25 @@ import { Sidebar, type ActiveView } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { DashboardView } from '@/components/DashboardView'
 import { LiveView } from '@/components/LiveView'
+import { CamerasView } from '@/components/CamerasView'
 import { EventsView } from '@/components/EventsView'
 import { AnalyticsView } from '@/components/AnalyticsView'
+import { AlertsView } from '@/components/AlertsView'
+import { VisionAgentView } from '@/components/VisionAgentView'
 import { listCameras, type Camera } from '@/lib/api'
-import { Card, CardContent } from '@/components/ui/card'
-import { ShieldAlert, Bot } from 'lucide-react'
 
 const VIEW_METADATA: Record<ActiveView, { title: string; subtitle: string }> = {
   dashboard: {
-    title: 'Dashboard',
+    title: 'Overview',
     subtitle: 'Real-time overview of your video intelligence system',
+  },
+  live: {
+    title: 'Live',
+    subtitle: 'Real-time monitoring with detection and tracking overlays',
   },
   cameras: {
     title: 'Cameras',
-    subtitle: 'Live fleet and sensor stream management',
+    subtitle: 'Fleet status and sensor management',
   },
   events: {
     title: 'Events',
@@ -27,16 +32,16 @@ const VIEW_METADATA: Record<ActiveView, { title: string; subtitle: string }> = {
     subtitle: 'Statistical breakdowns and spatial metrics',
   },
   investigations: {
-    title: 'Investigations',
+    title: 'Investigation',
     subtitle: 'Deep-dive video telemetry and incident reconstruction',
   },
   alerts: {
     title: 'Alerts',
-    subtitle: 'Automated violation alarms and rule configuration',
+    subtitle: 'Dispatched violation alerts across the fleet',
   },
   agent: {
     title: 'Vision Agent',
-    subtitle: 'AI assistant for multimodal video queries',
+    subtitle: 'Ask questions grounded in real TRACE tracking data',
   },
 }
 
@@ -119,43 +124,57 @@ function App() {
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           {activeView === 'dashboard' && (
             <DashboardView
+              cameras={cameras}
+              selectedCameraId={selectedCameraId}
+              onSelectCamera={setSelectedCameraId}
+              isApiConnected={isApiConnected}
               onNavigateToEvents={() => setActiveView('events')}
               onNavigateToAnalytics={() => setActiveView('analytics')}
             />
           )}
 
-          {activeView === 'cameras' && <LiveView />}
-          {activeView === 'events' && <EventsView />}
-          {activeView === 'investigations' && <EventsView />}
-          {activeView === 'analytics' && <AnalyticsView />}
-
-          {activeView === 'alerts' && (
-            <Card className="max-w-2xl mx-auto border-border bg-surface p-8 text-center mt-8 shadow-xs">
-              <CardContent className="flex flex-col items-center justify-center p-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-danger/10 text-danger mb-3">
-                  <ShieldAlert className="h-6 w-6" />
-                </div>
-                <h2 className="text-base font-semibold text-primary">Alert Dispatch System</h2>
-                <p className="text-xs text-secondary mt-1 max-w-md">
-                  Active alert webhooks are configured on the FastAPI backend for real-time violation notifications (Overspeed, Zone Intrusion, Sudden Stop).
-                </p>
-              </CardContent>
-            </Card>
+          {activeView === 'live' && (
+            <LiveView
+              cameras={cameras}
+              selectedCameraId={selectedCameraId}
+              onSelectCamera={setSelectedCameraId}
+            />
+          )}
+          {activeView === 'cameras' && (
+            <CamerasView
+              cameras={cameras}
+              selectedCameraId={selectedCameraId}
+              onSelectCamera={setSelectedCameraId}
+              onNavigateToLive={() => setActiveView('live')}
+            />
+          )}
+          {activeView === 'events' && (
+            <EventsView
+              cameras={cameras}
+              selectedCameraId={selectedCameraId}
+              onSelectCamera={setSelectedCameraId}
+              mode="events"
+            />
+          )}
+          {activeView === 'investigations' && (
+            <EventsView
+              cameras={cameras}
+              selectedCameraId={selectedCameraId}
+              onSelectCamera={setSelectedCameraId}
+              mode="investigation"
+            />
+          )}
+          {activeView === 'analytics' && (
+            <AnalyticsView
+              cameras={cameras}
+              selectedCameraId={selectedCameraId}
+              onSelectCamera={setSelectedCameraId}
+            />
           )}
 
-          {activeView === 'agent' && (
-            <Card className="max-w-2xl mx-auto border-border bg-surface p-8 text-center mt-8 shadow-xs">
-              <CardContent className="flex flex-col items-center justify-center p-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/20 text-secondary mb-3">
-                  <Bot className="h-6 w-6" />
-                </div>
-                <h2 className="text-base font-semibold text-primary">Vision Intelligence Agent</h2>
-                <p className="text-xs text-secondary mt-1 max-w-md">
-                  Natural language video query and scene description agent powered by TRACE tracking and trajectory telemetry.
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          {activeView === 'alerts' && <AlertsView cameras={cameras} />}
+
+          {activeView === 'agent' && <VisionAgentView />}
         </main>
       </div>
     </div>

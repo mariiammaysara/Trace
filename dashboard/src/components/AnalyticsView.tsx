@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { StatCard } from '@/components/StatCard'
 import { BarChart, type BarChartDatum } from '@/components/charts/BarChart'
-import { getAnalytics, listCameraEvents, listCameras } from '@/lib/api'
+import { getAnalytics, listCameraEvents } from '@/lib/api'
 import type { AnalyticsSummary, Camera, TraceEvent } from '@/lib/api'
 import { classifyEventType } from '@/lib/eventClassification'
 import { computeBusiestHours, formatHourLabel, formatSeconds } from '@/lib/analytics'
+import { BarChart3, PieChart, Clock3 } from 'lucide-react'
+
+interface AnalyticsViewProps {
+  cameras: Camera[]
+  selectedCameraId: string | null
+  onSelectCamera: (cameraId: string | null) => void
+}
 
 /**
  * The Analytics dashboard view: every number and chart comes from real
@@ -14,21 +20,10 @@ import { computeBusiestHours, formatHourLabel, formatSeconds } from '@/lib/analy
  * busiest_hours (omitted from the /analytics bundle -- see
  * src/lib/api.ts#getAnalytics). Nothing here is mock/hardcoded data.
  */
-export function AnalyticsView() {
-  const [cameras, setCameras] = useState<Camera[]>([])
-  const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null)
+export function AnalyticsView({ cameras, selectedCameraId, onSelectCamera }: AnalyticsViewProps) {
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null)
   const [events, setEvents] = useState<TraceEvent[]>([])
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    listCameras()
-      .then((result) => {
-        setCameras(result)
-        setSelectedCameraId((current) => current ?? result[0]?.camera_id ?? null)
-      })
-      .catch((err: unknown) => setError(String(err)))
-  }, [])
 
   useEffect(() => {
     if (!selectedCameraId) return
@@ -83,7 +78,11 @@ export function AnalyticsView() {
         }))
     : []
 
-  const busiestHoursData: BarChartDatum[] = computeBusiestHours(events).map(({ hour, count }) => ({
+  const busiestHours = computeBusiestHours(events)
+  const nonZeroHours = busiestHours.filter((h) => h.count > 0).length
+  const hasTemporalSpread = nonZeroHours > 1
+
+  const busiestHoursData: BarChartDatum[] = busiestHours.map(({ hour, count }) => ({
     key: String(hour),
     label: formatHourLabel(hour).slice(0, 2),
     value: count,
@@ -93,9 +92,8 @@ export function AnalyticsView() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-primary">Analytics</h1>
-        <Select value={selectedCameraId} onValueChange={(value) => setSelectedCameraId(value)}>
+      <div className="flex items-center justify-end">
+        <Select value={selectedCameraId} onValueChange={(value) => onSelectCamera(value)}>
           <SelectTrigger className="w-56">
             <SelectValue placeholder="Select a camera" />
           </SelectTrigger>
@@ -117,58 +115,99 @@ export function AnalyticsView() {
 
       {analytics && (
         <>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-            <StatCard label="Objects tracked" value={String(analytics.object_count)} />
-            <StatCard label="Line crossings" value={String(analytics.line_crossing_count)} />
-            <StatCard label="Zone violations" value={String(analytics.zone_violation_count)} variant="danger" />
-            <StatCard label="Traffic volume" value={String(analytics.traffic_volume)} hint="distinct objects through a line" />
-            <StatCard label="Avg. dwell time" value={formatSeconds(analytics.average_dwell_time)} />
+          {/* Supporting numbers -- one dense strip, not five separate cards. */}
+          <div className="flex flex-wrap items-center divide-x divide-border rounded-md border border-border bg-surface">
+            <div className="flex items-center gap-1.5 px-3.5 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">Objects tracked</span>
+              <span data-testid="metric-objects-tracked" className="font-mono text-sm font-semibold text-ink">{analytics.object_count}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3.5 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">Line crossings</span>
+              <span data-testid="metric-line-crossings" className="font-mono text-sm font-semibold text-ink">{analytics.line_crossing_count}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3.5 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">Zone violations</span>
+              <span
+                data-testid="metric-zone-violations"
+                className={`font-mono text-sm font-semibold ${analytics.zone_violation_count > 0 ? 'text-danger' : 'text-ink'}`}
+              >
+                {analytics.zone_violation_count}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3.5 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">Traffic volume</span>
+              <span data-testid="metric-traffic-volume" className="font-mono text-sm font-semibold text-ink">{analytics.traffic_volume}</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3.5 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">Avg. dwell</span>
+              <span data-testid="metric-avg-dwell" className="font-mono text-sm font-semibold text-ink">{formatSeconds(analytics.average_dwell_time)}</span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Event frequency</CardTitle>
+          {/* Primary insight: what's happening, by type -- gets the most
+              width. Secondary: composition by class. Both real event/object
+              data from the same GET /analytics response. */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+            <Card size="sm" className="lg:col-span-3 border-border bg-surface shadow-2xs">
+              <CardHeader className="flex flex-row items-center gap-1.5 border-b border-border/50">
+                <BarChart3 className="h-3.5 w-3.5 text-ink-subtle" />
+                <CardTitle className="text-xs font-semibold tracking-tight text-ink">Event frequency</CardTitle>
+                <span className="ml-auto text-[10px] text-ink-subtle">what's happening, by type</span>
               </CardHeader>
               <CardContent>
                 <BarChart data={eventFrequencyData} emptyMessage="No events recorded yet for this camera." />
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Per-class stats</CardTitle>
+            <Card size="sm" className="lg:col-span-2 border-border bg-surface shadow-2xs">
+              <CardHeader className="flex flex-row items-center gap-1.5 border-b border-border/50">
+                <PieChart className="h-3.5 w-3.5 text-ink-subtle" />
+                <CardTitle className="text-xs font-semibold tracking-tight text-ink">Per-class stats</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <div>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-secondary">Objects tracked</p>
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">Objects tracked</p>
                   <BarChart data={perClassObjectData} emptyMessage="No objects tracked yet." />
                 </div>
                 <div>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-secondary">Events</p>
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">Events</p>
                   <BarChart data={perClassEventData} emptyMessage="No events recorded yet." />
                 </div>
               </CardContent>
             </Card>
-
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Busiest hours</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <BarChart data={busiestHoursData} orientation="vertical" />
-                <p className="mt-3 text-xs text-secondary">
-                  Hour-of-day is derived from each event's timestamp treated as Unix epoch seconds (UTC) — correct for
-                  live-camera sources, but file-based sources (like this demo) use video-relative timestamps, so
-                  everything currently buckets into 00:00 UTC. See TRACE_STUDY_GUIDE.md Section 11.
-                </p>
-              </CardContent>
-            </Card>
           </div>
+
+          {/* Supporting detail: temporal pattern. Deliberately does not
+              render the full 24-slot chart when the data can't actually
+              support it (see src/lib/analytics.ts's documented UTC-bucketing
+              caveat for file-based sources) -- a wall of empty hour slots
+              isn't insight, it's noise. */}
+          <Card size="sm" className="border-border bg-surface shadow-2xs">
+            <CardHeader className="flex flex-row items-center gap-1.5 border-b border-border/50">
+              <Clock3 className="h-3.5 w-3.5 text-ink-subtle" />
+              <CardTitle className="text-xs font-semibold tracking-tight text-ink">Busiest hours</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {hasTemporalSpread ? (
+                <>
+                  <BarChart data={busiestHoursData} orientation="vertical" />
+                  <p className="mt-3 text-xs text-ink-subtle">
+                    Hour-of-day is derived from each event's timestamp treated as Unix epoch seconds (UTC).
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-ink-subtle">
+                  {events.length === 0
+                    ? 'No events recorded yet for this camera.'
+                    : `Not enough time-of-day spread to plot yet -- all ${events.length} event${events.length === 1 ? '' : 's'} fall in the same UTC hour. File-based sources use video-relative timestamps rather than real capture time (see TRACE_STUDY_GUIDE.md Section 11), so this chart stays limited until events come from a live-camera source.`}
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
 
-      {!analytics && !error && <p className="text-secondary">Loading analytics…</p>}
+      {!analytics && !error && <p className="text-ink-subtle">Loading analytics…</p>}
     </div>
   )
 }

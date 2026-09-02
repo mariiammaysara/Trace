@@ -38,40 +38,43 @@ const mockEvents: api.TraceEvent[] = [
   },
 ]
 
+function renderAnalyticsView() {
+  return render(<AnalyticsView cameras={[mockCamera]} selectedCameraId="demo" onSelectCamera={vi.fn()} />)
+}
+
 describe('AnalyticsView', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
-    vi.spyOn(api, 'listCameras').mockResolvedValue([mockCamera])
     vi.spyOn(api, 'getAnalytics').mockResolvedValue(mockAnalytics)
     vi.spyOn(api, 'listCameraEvents').mockResolvedValue(mockEvents)
   })
 
-  it('renders real fetched analytics data in the stat cards', async () => {
-    render(<AnalyticsView />)
+  it('renders real fetched analytics data in the metrics strip', async () => {
+    renderAnalyticsView()
 
     await waitFor(() => expect(api.getAnalytics).toHaveBeenCalledWith('demo'))
 
-    expect(await screen.findByTestId('stat-value-Objects tracked')).toHaveTextContent('5')
-    expect(screen.getByTestId('stat-value-Line crossings')).toHaveTextContent('3')
-    expect(screen.getByTestId('stat-value-Zone violations')).toHaveTextContent('2')
-    expect(screen.getByTestId('stat-value-Traffic volume')).toHaveTextContent('1')
-    expect(screen.getByTestId('stat-value-Avg. dwell time')).toHaveTextContent('4.5s')
+    expect(await screen.findByTestId('metric-objects-tracked')).toHaveTextContent('5')
+    expect(screen.getByTestId('metric-line-crossings')).toHaveTextContent('3')
+    expect(screen.getByTestId('metric-zone-violations')).toHaveTextContent('2')
+    expect(screen.getByTestId('metric-traffic-volume')).toHaveTextContent('1')
+    expect(screen.getByTestId('metric-avg-dwell')).toHaveTextContent('4.5s')
   })
 
-  it('renders the zone-violations stat in --color-danger, not the default brand color', async () => {
-    render(<AnalyticsView />)
+  it('renders the zone-violations metric in --color-danger, not the default ink color', async () => {
+    renderAnalyticsView()
 
-    const value = await screen.findByTestId('stat-value-Zone violations')
+    const value = await screen.findByTestId('metric-zone-violations')
     expect(value).toHaveClass('text-danger')
-    expect(value).not.toHaveClass('text-primary')
+    expect(value).not.toHaveClass('text-ink')
 
-    const normalValue = screen.getByTestId('stat-value-Objects tracked')
-    expect(normalValue).toHaveClass('text-primary')
+    const normalValue = screen.getByTestId('metric-objects-tracked')
+    expect(normalValue).toHaveClass('text-ink')
     expect(normalValue).not.toHaveClass('text-danger')
   })
 
   it('renders the ZONE_ENTERED event-frequency bar in danger, not accent', async () => {
-    render(<AnalyticsView />)
+    renderAnalyticsView()
 
     const bar = await screen.findByTestId('bar-ZONE_ENTERED')
     expect(bar).toHaveClass('bg-danger')
@@ -81,10 +84,10 @@ describe('AnalyticsView', () => {
     expect(normalBar).not.toHaveClass('bg-danger')
   })
 
-  it('shows an error message if the initial camera fetch fails', async () => {
-    vi.spyOn(api, 'listCameras').mockRejectedValue(new Error('network down'))
+  it('shows an error message if the analytics fetch fails', async () => {
+    vi.spyOn(api, 'getAnalytics').mockRejectedValue(new Error('network down'))
 
-    render(<AnalyticsView />)
+    renderAnalyticsView()
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('network down'))
   })

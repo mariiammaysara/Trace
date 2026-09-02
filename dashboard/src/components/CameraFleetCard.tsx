@@ -21,11 +21,11 @@ export function CameraFleetCard({
     <Card className={cn('flex flex-col border-border bg-surface shadow-2xs', className)}>
       <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 px-4 py-3">
         <div className="flex items-center gap-2">
-          <CardTitle className="text-sm font-semibold tracking-tight text-primary flex items-center gap-1.5">
-            <Video className="h-4 w-4 text-secondary" />
+          <CardTitle className="text-sm font-semibold tracking-tight text-ink flex items-center gap-1.5">
+            <Video className="h-4 w-4 text-ink-subtle" />
             Active Fleet
           </CardTitle>
-          <span className="rounded-full bg-surface-alt px-1.5 py-0.2 text-[10px] font-mono font-medium text-secondary">
+          <span className="rounded-full bg-surface-alt px-1.5 py-0.2 text-[10px] font-mono font-medium text-ink-subtle">
             {cameras.length} feeds
           </span>
         </div>
@@ -33,7 +33,7 @@ export function CameraFleetCard({
 
       <CardContent className="p-0 divide-y divide-border/30 overflow-y-auto max-h-[220px]">
         {cameras.length === 0 ? (
-          <p className="p-4 text-xs text-secondary text-center">No cameras connected.</p>
+          <p className="p-4 text-xs text-ink-subtle text-center">No cameras connected.</p>
         ) : (
           cameras.map((camera) => {
             const isActive = camera.camera_id === activeCameraId
@@ -47,11 +47,11 @@ export function CameraFleetCard({
                 )}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="relative flex h-7 w-7 items-center justify-center rounded-md bg-surface-alt text-primary shrink-0">
-                    <Video className="h-3.5 w-3.5 text-secondary" />
+                  <div className="relative flex h-7 w-7 items-center justify-center rounded-md bg-surface-alt text-ink shrink-0">
+                    <Video className="h-3.5 w-3.5 text-ink-subtle" />
                     {isActive && (
                       <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                        <span className="motion-safe:absolute motion-safe:inline-flex h-full w-full motion-safe:animate-ping rounded-full bg-success opacity-75" />
                         <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
                       </span>
                     )}
@@ -59,7 +59,7 @@ export function CameraFleetCard({
 
                   <div className="flex flex-col min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-semibold text-primary truncate">
+                      <span className="text-xs font-semibold text-ink truncate">
                         {camera.name ?? camera.camera_id}
                       </span>
                       {isActive && (
@@ -68,7 +68,7 @@ export function CameraFleetCard({
                         </span>
                       )}
                     </div>
-                    <span className="text-[10px] text-secondary font-mono truncate">
+                    <span className="text-[10px] text-ink-subtle font-mono truncate">
                       ID: {camera.camera_id} {camera.location ? `• ${camera.location}` : ''}
                     </span>
                   </div>

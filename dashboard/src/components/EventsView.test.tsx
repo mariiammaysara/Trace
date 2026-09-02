@@ -56,10 +56,15 @@ const mockEvents: api.TraceEvent[] = [
   },
 ]
 
+function renderEventsView(mode?: 'events' | 'investigation') {
+  return render(
+    <EventsView cameras={[mockCamera]} selectedCameraId="demo" onSelectCamera={vi.fn()} mode={mode} />,
+  )
+}
+
 describe('EventsView', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
-    vi.spyOn(api, 'listCameras').mockResolvedValue([mockCamera])
     vi.spyOn(api, 'listVideos').mockResolvedValue([mockVideo])
     vi.spyOn(api, 'listCameraObjects').mockResolvedValue([mockObject])
     vi.spyOn(api, 'getObjectTrajectory').mockResolvedValue(mockTrajectory)
@@ -70,7 +75,7 @@ describe('EventsView', () => {
   })
 
   it('renders the events table with real fetched events, not placeholders', async () => {
-    render(<EventsView />)
+    renderEventsView()
 
     expect(await screen.findByText('OBJECT_APPEARED')).toBeInTheDocument()
     expect(screen.getByText('ZONE_ENTERED')).toBeInTheDocument()
@@ -82,7 +87,7 @@ describe('EventsView', () => {
   })
 
   it('renders badge colors in the table matching the documented event->color mapping', async () => {
-    render(<EventsView />)
+    renderEventsView()
 
     const violationBadge = await screen.findByText('ZONE_ENTERED')
     expect(violationBadge).toHaveClass('text-danger')
@@ -94,7 +99,7 @@ describe('EventsView', () => {
 
   it('clicking a row seeks the shared video player to that event\'s timestamp', async () => {
     const user = userEvent.setup()
-    render(<EventsView />)
+    renderEventsView()
 
     await screen.findByText('ZONE_ENTERED')
     // Player starts at 0.0s before any row is clicked.
@@ -109,7 +114,7 @@ describe('EventsView', () => {
 
   it('filters events by event type through the API rather than client-side only', async () => {
     const user = userEvent.setup()
-    render(<EventsView />)
+    renderEventsView()
 
     await screen.findByText('ZONE_ENTERED')
     vi.mocked(api.listCameraEvents).mockClear()
@@ -125,11 +130,26 @@ describe('EventsView', () => {
     )
   })
 
-  it('shows an error message if the initial camera fetch fails', async () => {
-    vi.spyOn(api, 'listCameras').mockRejectedValue(new Error('network down'))
+  it('shows an error message if the camera scene fetch fails', async () => {
+    vi.spyOn(api, 'listVideos').mockRejectedValue(new Error('network down'))
 
-    render(<EventsView />)
+    renderEventsView()
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('network down'))
+  })
+
+  it('investigation mode shows an empty prompt until an event is selected, then the evidence panel', async () => {
+    const user = userEvent.setup()
+    renderEventsView('investigation')
+
+    expect(screen.getByText(/Select an event to begin investigating/i)).toBeInTheDocument()
+
+    const zoneEnteredRow = (await screen.findAllByText('ZONE_ENTERED'))[0].closest('[role="button"]')
+    expect(zoneEnteredRow).not.toBeNull()
+    await user.click(zoneEnteredRow as HTMLElement)
+
+    await waitFor(() => expect(api.getObjectTrajectory).toHaveBeenCalledWith(1))
+    expect(screen.getByText('Trajectory')).toBeInTheDocument()
+    expect(screen.getByText('Related events')).toBeInTheDocument()
   })
 })

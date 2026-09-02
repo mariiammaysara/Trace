@@ -34,6 +34,21 @@ module.exports = {
       warning: "var(--color-warning)",
       danger: "var(--color-danger)",
       info: "var(--color-info)",
+
+      // Text hierarchy ("ink" scale) -- deliberately its own namespace, not
+      // reusing `primary`/`secondary` above: those are brand/interactive
+      // colors (buttons, active nav), these are neutral text tiers. See
+      // tokens.css for the contrast ratio each one targets.
+      ink: "var(--text-primary)",
+      "ink-quiet": "var(--text-secondary)",
+      "ink-subtle": "var(--text-tertiary)",
+      "ink-disabled": "var(--text-disabled)",
+
+      // Same tiers, for text on a --color-primary (navy) surface -- the
+      // sidebar and the video-player HUD chips.
+      "ink-on-dark": "var(--text-on-dark)",
+      "ink-on-dark-quiet": "var(--text-on-dark-quiet)",
+      "ink-on-dark-subtle": "var(--text-on-dark-subtle)",
     },
   },
   plugins: [],

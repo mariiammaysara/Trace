@@ -3,13 +3,27 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:is(.dark *));
 @config "../tailwind.config.js";
 
+/*
+ * Typography system: Geist Sans + Geist Mono -- one type family, two optical
+ * roles, deliberately paired rather than left at the framework default.
+ * Geist Sans carries UI copy (labels, nav, body); Geist Mono carries every
+ * number and machine-readable value (KPI values, timestamps, camera/object
+ * IDs, confidence %, coordinates) -- built for tabular alignment, so digits
+ * never shift width as they update. Sharing one designer/family keeps the
+ * pairing visually cohesive instead of two unrelated typefaces fighting for
+ * attention. Only three weights are used anywhere in the app: 400 (body),
+ * 500 (medium -- most UI text/labels), 600 (semibold -- headings/KPI
+ * values/emphasis). Never go lighter than 400 or heavier than 600.
+ */
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
+    --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -51,17 +65,26 @@
 }
 
 /*
- * Every value below is a reference into theme/tokens.css's --color-* system,
- * not a nova-preset default. Mapped by FUNCTION, not by name -- e.g. shadcn's
- * --primary (its button/action color) maps to --color-secondary, because
- * TRACE's own spec assigns buttons to --color-secondary, not --color-primary
- * (which is reserved for sidebar/header/nav per that spec). See
- * theme/tokens.css for the source values and their documented purpose.
+ * Every value below is a reference into theme/tokens.css, not a nova-preset
+ * default. Mapped by FUNCTION, not by name -- e.g. shadcn's --primary (its
+ * button/action color) maps to --color-secondary, because TRACE's own spec
+ * assigns buttons to --color-secondary, not --color-primary (which is
+ * reserved for sidebar/header/nav per that spec). See theme/tokens.css for
+ * the source values and their documented purpose.
+ *
+ * --muted-foreground is the one exception to "everything maps to a
+ * --color-* brand variable": it maps to --text-tertiary (the "ink" text
+ * scale, also in tokens.css) instead. shadcn primitives (Select placeholder
+ * text, disabled Input text, etc.) reach for --muted-foreground by default,
+ * and it used to point at --color-secondary -- a BRAND/interactive color,
+ * not a neutral text tone -- which read as washed-out at normal text sizes.
+ * Routing it through the ink scale instead fixes every primitive that uses
+ * it in one place, rather than patching each component's className.
  *
  * No dark-mode palette has been specified for TRACE yet, so .dark
- * deliberately points at the exact same --color-* variables as :root rather
- * than inventing dark values -- dark mode currently looks identical to
- * light mode until a real dark palette is provided.
+ * deliberately points at the exact same variables as :root rather than
+ * inventing dark values -- dark mode currently looks identical to light mode
+ * until a real dark palette is provided.
  */
 :root {
     --background: var(--color-background);
@@ -75,7 +98,7 @@
     --secondary: var(--color-surface-alt);
     --secondary-foreground: var(--color-primary);
     --muted: var(--color-surface-alt);
-    --muted-foreground: var(--color-secondary);
+    --muted-foreground: var(--text-tertiary);
     --accent: var(--color-accent);
     --accent-foreground: var(--color-primary);
     --destructive: var(--color-danger);
@@ -110,7 +133,7 @@
     --secondary: var(--color-surface-alt);
     --secondary-foreground: var(--color-primary);
     --muted: var(--color-surface-alt);
-    --muted-foreground: var(--color-secondary);
+    --muted-foreground: var(--text-tertiary);
     --accent: var(--color-accent);
     --accent-foreground: var(--color-primary);
     --destructive: var(--color-danger);

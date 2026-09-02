@@ -46,7 +46,6 @@ const mockTrajectory: api.Trajectory = {
 describe('LiveView', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
-    vi.spyOn(api, 'listCameras').mockResolvedValue([mockCamera])
     vi.spyOn(api, 'listVideos').mockResolvedValue([mockVideo])
     vi.spyOn(api, 'listCameraObjects').mockResolvedValue([mockObject])
     vi.spyOn(api, 'getObjectTrajectory').mockResolvedValue(mockTrajectory)
@@ -56,17 +55,10 @@ describe('LiveView', () => {
     vi.spyOn(api, 'getVideoStreamUrl').mockReturnValue('http://localhost:8000/videos/1/stream')
   })
 
-  it('renders the camera selector and video from a mocked API response', async () => {
-    render(<LiveView />)
+  it('renders the camera switcher and video for the selected camera', async () => {
+    render(<LiveView cameras={[mockCamera]} selectedCameraId="demo" onSelectCamera={vi.fn()} />)
 
-    await waitFor(() => expect(api.listCameras).toHaveBeenCalled())
-    // The trigger shows the raw camera_id ("demo"), not the display name,
-    // until the dropdown is actually opened and the matching SelectItem
-    // mounts -- Base UI only resolves an item's label once it's been
-    // rendered at least once. Proof the right camera got auto-selected is
-    // this value reaching the trigger and flowing into the API calls below,
-    // not the label text (which needs a real open-dropdown interaction).
-    await waitFor(() => expect(screen.getByRole('combobox')).toHaveTextContent('demo'))
+    expect(screen.getByText('Demo Camera')).toBeInTheDocument()
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument())
 
@@ -78,10 +70,10 @@ describe('LiveView', () => {
     expect(api.getObjectTrajectory).toHaveBeenCalledWith(1)
   })
 
-  it('shows an error message if the initial camera fetch fails', async () => {
-    vi.spyOn(api, 'listCameras').mockRejectedValue(new Error('network down'))
+  it('shows an error message if the camera scene fetch fails', async () => {
+    vi.spyOn(api, 'listVideos').mockRejectedValue(new Error('network down'))
 
-    render(<LiveView />)
+    render(<LiveView cameras={[mockCamera]} selectedCameraId="demo" onSelectCamera={vi.fn()} />)
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('network down'))
   })
@@ -89,8 +81,14 @@ describe('LiveView', () => {
   it('shows a no-video message when the camera has none registered', async () => {
     vi.spyOn(api, 'listVideos').mockResolvedValue([])
 
-    render(<LiveView />)
+    render(<LiveView cameras={[mockCamera]} selectedCameraId="demo" onSelectCamera={vi.fn()} />)
 
     await waitFor(() => expect(screen.getByText(/No video registered/i)).toBeInTheDocument())
+  })
+
+  it('shows an empty state when no cameras are registered', () => {
+    render(<LiveView cameras={[]} selectedCameraId={null} onSelectCamera={vi.fn()} />)
+
+    expect(screen.getByText(/No cameras registered/i)).toBeInTheDocument()
   })
 })

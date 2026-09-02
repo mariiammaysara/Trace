@@ -89,11 +89,33 @@ export interface AnalyticsSummary {
   per_class_stats: Record<string, { object_count: number; event_count: number }>
 }
 
+async function readErrorDetail(response: Response): Promise<string> {
+  const body = await response.text()
+  try {
+    const parsed = JSON.parse(body) as { detail?: string }
+    if (typeof parsed.detail === 'string') return parsed.detail
+  } catch {
+    // not JSON -- fall through to the raw body
+  }
+  return body
+}
+
 async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`)
   if (!response.ok) {
-    const body = await response.text()
-    throw new Error(`GET ${path} failed: ${response.status} ${body}`)
+    throw new Error(await readErrorDetail(response))
+  }
+  return response.json() as Promise<T>
+}
+
+async function apiPost<T>(path: string, payload: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) {
+    throw new Error(await readErrorDetail(response))
   }
   return response.json() as Promise<T>
 }
@@ -158,4 +180,48 @@ export function getVideoStreamUrl(videoId: number): string {
 export function getAnalytics(cameraId?: string): Promise<AnalyticsSummary> {
   const query = cameraId ? `?camera_id=${encodeURIComponent(cameraId)}` : ''
   return apiGet<AnalyticsSummary>(`/analytics${query}`)
+}
+
+export interface AlertRecord {
+  id: number
+  camera_id: string
+  event_id: number | null
+  event_type: string
+  message: string
+  channel: string
+  created_at: string
+}
+
+/**
+ * GET /cameras/{camera_id}/alerts -- Section 13's dashboard/API delivery
+ * channel: an alert is "delivered" by existing here, queryable. These are
+ * real Alert rows created automatically (src/database/repository.py's
+ * should_alert) when a qualifying event -- OVERSPEED, ZONE_ENTERED,
+ * SUDDEN_STOP, LINE_CROSSED -- is ingested for this camera.
+ */
+export function listCameraAlerts(cameraId: string): Promise<AlertRecord[]> {
+  return apiGet<AlertRecord[]>(`/cameras/${encodeURIComponent(cameraId)}/alerts`)
+}
+
+export interface AgentToolCall {
+  name: string
+  arguments: Record<string, unknown>
+  result: Record<string, unknown>
+}
+
+export interface AgentAnswer {
+  answer: string
+  tool_calls: AgentToolCall[]
+}
+
+/**
+ * POST /agent/query -- Section 12's Vision Agent. Grounded: every answer is
+ * backed by real tool calls over the same repository/analytics layer the
+ * rest of the dashboard reads (src/agent/tools.py), returned alongside the
+ * answer for transparency. Returns a 503 with a clear detail message if no
+ * LLM API key is configured in this environment (src/api/deps.py) -- that's
+ * a real, honest state to surface, not an error to hide.
+ */
+export function queryAgent(question: string): Promise<AgentAnswer> {
+  return apiPost<AgentAnswer>('/agent/query', { question })
 }

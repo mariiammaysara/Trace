@@ -118,14 +118,32 @@ export function VideoOverlay({
                 ) : (
                   <circle cx={nearest.x} cy={nearest.y} r={6} strokeWidth={2} />
                 )}
-                <text
-                  x={nearest.x_min ?? nearest.x}
-                  y={(nearest.y_min ?? nearest.y) - 6}
-                  fontSize={14}
-                  className="fill-current stroke-none font-medium"
-                >
-                  #{trajectory.object_id} {trajectory.class_name}
-                </text>
+                {(() => {
+                  const labelX = nearest.x_min ?? nearest.x
+                  const labelY = (nearest.y_min ?? nearest.y) - 8
+                  const label = `#${trajectory.object_id} ${trajectory.class_name}`
+                  const labelWidth = label.length * 7 + 10
+                  return (
+                    <>
+                      <rect
+                        x={labelX}
+                        y={labelY - 13}
+                        width={labelWidth}
+                        height={17}
+                        rx={3}
+                        className="fill-primary/85 stroke-none"
+                      />
+                      <text
+                        x={labelX + 5}
+                        y={labelY - 1}
+                        fontSize={12}
+                        className="fill-surface stroke-none font-medium font-mono"
+                      >
+                        {label}
+                      </text>
+                    </>
+                  )
+                })()}
               </>
             )}
           </g>

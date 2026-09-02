@@ -14,7 +14,7 @@ rather than choosing font-size/weight ad hoc.
 |---|---|---|
 | Page title | `text-2xl font-semibold text-primary` | View headings (e.g. "Analytics") |
 | Card title | `text-base font-medium text-primary` | `CardTitle` content |
-| Stat label | `text-xs font-medium uppercase tracking-wide text-secondary` | The small caption above a stat number (e.g. "OBJECT COUNT") |
+| Stat label | `text-xs font-semibold uppercase tracking-wide text-primary/80` | The small caption above a stat number (e.g. "OBJECT COUNT") — `font-semibold` + `text-primary/80` rather than `text-secondary`, since a small tracked-out uppercase caption needs more weight than `text-secondary`'s ~4.5:1 ratio gives it to stay legible at that size |
 | Stat value | `text-2xl font-semibold tabular-nums text-primary` (or `text-danger` for a violation stat) | The large number in a stat card |
 | Body | `text-sm text-primary` | Default paragraph/UI text |
 | Secondary / caption | `text-sm text-secondary` | De-emphasized text (timestamps, playback time, chart axis labels) |

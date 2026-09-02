@@ -42,7 +42,7 @@ export function BarChart({ data, orientation = 'horizontal', emptyMessage, class
   const realMax = Math.max(0, ...data.map((d) => d.value))
 
   if (data.length === 0 || realMax === 0) {
-    return <p className="text-sm text-secondary">{emptyMessage ?? 'No data yet.'}</p>
+    return <p className="text-sm text-ink-subtle">{emptyMessage ?? 'No data yet.'}</p>
   }
 
   const max = realMax
@@ -67,7 +67,7 @@ export function BarChart({ data, orientation = 'horizontal', emptyMessage, class
                   transitionDelay: `${Math.min(index * 15, 300)}ms`,
                 }}
               />
-              <span className="text-[10px] text-secondary">{index % 3 === 0 ? datum.label : ''}</span>
+              <span className="font-mono text-[10px] text-ink-subtle">{index % 3 === 0 ? datum.label : ''}</span>
             </div>
           )
         })}
@@ -81,7 +81,7 @@ export function BarChart({ data, orientation = 'horizontal', emptyMessage, class
         const pct = (datum.value / max) * 100
         return (
           <div key={datum.key} className="flex items-center gap-3">
-            <span className="w-32 shrink-0 truncate text-sm text-secondary" title={datum.label}>
+            <span className="w-32 shrink-0 truncate text-sm text-ink-subtle" title={datum.label}>
               {datum.label}
             </span>
             <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-alt">
@@ -95,7 +95,7 @@ export function BarChart({ data, orientation = 'horizontal', emptyMessage, class
                 }}
               />
             </div>
-            <span className="w-10 shrink-0 text-right text-sm tabular-nums text-primary">{datum.value}</span>
+            <span className="w-10 shrink-0 text-right font-mono text-sm tabular-nums text-ink">{datum.value}</span>
           </div>
         )
       })}
