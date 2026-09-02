@@ -53,19 +53,18 @@
 
 ## 1. Project Overview
 
-Surveillance infrastructure generates millions of hours of video that remain unindexed and dark. Traditional video management software (VMS) lacks real-time spatial awareness, sub-second violation indexing, and automated multi-object trajectory synthesis.
+Surveillance infrastructure generates millions of hours of unindexed video daily. Traditional video management software (VMS) records passive pixels without spatial awareness, violation indexing, or queryable intelligence.
 
-**TRACE solves this end-to-end**:
-- **Ingests** raw video feeds (RTSP/MP4).
-- **Detects & Tracks** multiple target classes simultaneously using robust association that preserves track identities through partial occlusions.
-- **Projects** 2D pixel coordinates into calibrated 3D world-ground planes using $3 \times 3$ metric homography matrices.
-- **Evaluates** complex spatio-temporal rules in real time (e.g., speed violations, perimeter breaches, loitering, sudden stops).
-- **Stores** frame-by-frame trajectory vectors and event logs into a relational database.
-- **Surfaces** metrics via a responsive web dashboard, REST APIs, and a tool-using AI Vision Agent.
+**TRACE transforms raw surveillance footage into structured, searchable spatial intelligence end-to-end:**
 
-```
-RAW VIDEO → DETECTION → BYTE-TRACKING → HOMOGRAPHY → TRAJECTORY SYNTHESIS → EVENT ENGINE → FASTAPI & DB → OPERATOR DASHBOARD + VISION AGENT
-```
+| Core Capability | Pipeline Architecture | Operational Output |
+| :--- | :--- | :--- |
+| **Perception & Tracking** | YOLOv8 + ByteTrack (Kalman Filter) | Real-time multi-class bounding boxes with persistent track IDs |
+| **Spatial Calibration** | $3 \times 3$ Metric Planar Homography | Real-world ground coordinates $(X, Y)_{\text{m}}$ and physical velocities |
+| **Event Engine** | Spatio-Temporal Deterministic Rules | Line crossings, zone intrusions, dwell times, and speed anomalies |
+| **Query & Investigation** | PostgreSQL 16 + FastAPI + React 19 | Sub-second forensic search, live HUD overlays, and tool-using LLM Agent |
+
+> **Core Idea:** *"TRACE doesn't just detect objects in video — it continuously tracks and understands what happened."*
 
 ---
 
