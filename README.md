@@ -31,8 +31,8 @@
 
 1. [Project Overview](#1-project-overview)
 2. [System Architecture](#2-system-architecture)
-3. [Key Features](#3-key-features)
-4. [Computer Vision & ML Pipeline](#4-computer-vision--ml-pipeline)
+3. [Computer Vision & ML Pipeline](#3-computer-vision--ml-pipeline)
+4. [Deterministic Event Engine](#4-deterministic-event-engine)
 5. [Model Training & Domain Adaptation](#5-model-training--domain-adaptation)
 6. [Formal Evaluation & Accuracy](#6-formal-evaluation--accuracy)
 7. [Inference Benchmarks & Performance](#7-inference-benchmarks--performance)
@@ -115,49 +115,28 @@ Surveillance infrastructure generates millions of hours of unindexed video daily
 │   └───────────────────────────────────────────────────┘      └─────────────────────────────────────┘   │
 │                                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+### Architectural Layer Breakdown
+
+1. **Edge Computer Vision Worker (`src/detection/` & `src/tracking/`)**
+   - Ingests raw video files or RTSP streams frame-by-frame via `FrameSource`.
+   - Runs configurable YOLOv8 detection to locate objects across 6 target classes.
+   - Preserves persistent IDs across frames via ByteTrack's two-stage Kalman association.
+
+2. **Spatial Geometry & Deterministic Event Engine (`src/geometry/` & `src/events/`)**
+   - Applies $3 \times 3$ ground-plane homography to estimate real physical coordinates and velocities.
+   - Evaluates pure deterministic rules (`LINE_CROSSED`, `ZONE_ENTERED`, `LOITERING`, `STOPPED`) with hysteresis debounce to eliminate false edge triggers.
+
+3. **Persistence & Data Layer (`src/database/` & `src/api/`)**
+   - Batches high-throughput trajectory points and structured event records into PostgreSQL 16.
+   - Exposes clean REST API endpoints via FastAPI with strict Pydantic v2 validation and typed error handling.
+
+4. **Operator Interface & AI Agent (`dashboard/` & `src/agent/`)**
+   - **React 19 Dashboard**: Real-time HUD telemetry, synchronized SVG vector overlays, sub-second click-to-seek, and interactive demo scenarios.
+   - **Claude 3.5 Vision Agent**: Tool-using LLM answering natural language queries strictly grounded in real database records with safety-gated action approvals.
 
 ---
 
-## 3. Key Features
-
-- **Real-Time Object Detection**: Configurable YOLOv8 inference (supporting PyTorch, ONNX, and TensorRT runtimes) targeting 6 primary urban mobility classes: `person`, `car`, `motorcycle`, `bus`, `truck`, `bicycle`.
-- **Robust Multi-Object Tracking (ByteTrack)**: Two-stage Hungarian matching with Kalman filtering that retains low-confidence detections and eliminates ID switching during heavy object overlap.
-- **Metric Camera Calibration & Homography**: Planar perspective warping translating image plane $(x, y)_{\text{px}}$ to real-world ground coordinates $(X, Y)_{\text{m}}$, enabling precise physical distance and velocity estimation.
-- **Physics-Based Speed Estimation**: Moving-window velocity calculation with outlier filtering and Savitzky-Golay trajectory smoothing.
-- **Deterministic Event State Machine**:
-  - `LINE_CROSSED`: Direction-aware vector intersection against virtual tripwires.
-  - `ZONE_ENTERED` / `ZONE_EXITED`: Ray-casting point-in-polygon spatial containment.
-  - `OVERSPEED`: Velocity threshold triggers with ground-truth velocity verification.
-  - `STOPPED` & `SUDDEN_STOP`: Negative acceleration anomaly triggers.
-  - `LOITERING`: Dwell-time accumulation within designated spatial enclosures.
-- **Automated Webhook Alerting**: Configurable webhook dispatchers with exponential backoff retries and cryptographic payload signatures.
-- **Interactive Video Intelligence Dashboard**: High-density React operations console with sub-second event scrub jumping, live vector overlays, and camera fleet management.
-- **Tool-Using Vision Agent**: Conversational agent powered by Claude 3.5 Sonnet that uses real database tools to investigate incidents, summarize trends, and propose safe action policies.
-
-### Event Engine in Action (Real Footage)
-
-![TRACE Event Engine line-crossing demo](docs/demo_hero.gif)
-
-Real stock footage of a static street-corner intersection (`data/demo_trafficlight.mp4`), run through TRACE's actual detection → tracking → event pipeline (`scripts/persist_video.py`, camera `demo-trafficlight`) — not staged, not hand-annotated. Real, persisted results across the full 26.7s / 801-frame clip:
-
-| Real, persisted result | Value |
-| :--- | :--- |
-| Avg. detections/frame | 16.13 |
-| Confirmed tracks (unique `object_id`) | 130 |
-| **`LINE_CROSSED` events** | **1** (`object_id=2`, t=9.5s, right→left) |
-| `STOPPED` events | 30 |
-| `OBJECT_APPEARED` / `OBJECT_DISAPPEARED` | 130 / 112 |
-
-Only **one** real line-crossing occurs in this clip — reported exactly as measured, not implied to be more. This camera has only a placeholder/illustrative homography (`configs/cameras/demo-trafficlight.json`, same convention as the built-in `demo` camera's own config) since no real-world survey exists for this stock footage, so no speed or `OVERSPEED` claim is made here — `LINE_CROSSED` is pure pixel-space line-segment geometry and does not depend on the homography's world scale.
-
-**Known condition on this clip**: a permanent tilt-shift/depth-of-field effect in the source footage blurs everything outside a mid-frame focal band. Measured effect (not assumed): 8.12 detections/frame at 0.541 avg. confidence in the sharp band vs. 7.10 detections/frame at 0.496 avg. confidence in the blurred distant band — a modest (~8% relative) reduction, not a severe collapse.
-
-**Standing note**: none of TRACE's three demo/stock videos (this one, plus two aerial clips used for benchmarking only — see [Section 7](#7-inference-benchmarks--performance)) have ground-truth annotations. No Precision/Recall/mAP/MOTA/IDF1 claim is made from any of them — those numbers come exclusively from `data/sample.mp4`'s hand-verified ground truth ([Section 6](#6-formal-evaluation--accuracy)).
-
----
-
-## 4. Computer Vision & ML Pipeline
+## 3. Computer Vision & ML Pipeline
 
 ```
 [Frame Ingestion] 
@@ -183,6 +162,40 @@ Only **one** real line-crossing occurs in this clip — reported exactly as meas
        ▼
 [Postgres Batch Sync] ─────► Asynchronous batch flush of track coordinates & triggered incident records
 ```
+
+---
+
+## 4. Deterministic Event Engine
+
+TRACE evaluates deterministic spatio-temporal rules over trajectory streams with hysteresis debouncing:
+
+| Event Type | Trigger Condition | Geometry / State Logic | Hysteresis / Debounce |
+| :--- | :--- | :--- | :--- |
+| `LINE_CROSSED` | Trajectory vector intersects a directional virtual tripwire | Vector cross-product intersection & direction angle | Instant on segment crossing |
+| `ZONE_ENTERED` | Object centroid enters a polygon boundary | Ray-casting Point-in-Polygon (`Shapely`) | Confirmed after $N$ consecutive inside frames |
+| `ZONE_EXITED` | Object centroid leaves a previously occupied polygon | Ray-casting Point-in-Polygon (`Shapely`) | Confirmed after $N$ consecutive outside frames |
+| `LOITERING` | Dwell time within a designated zone exceeds threshold | Continuous timestamp accumulation $\Delta t \ge T_{\text{loiter}}$ | State maintained until `ZONE_EXITED` |
+| `OVERSPEED` | Calibrated ground-plane velocity exceeds speed limit | Savitzky-Golay smoothed metric speed $\|v\| > v_{\text{max}}$ | Moving-window velocity averaging |
+| `STOPPED` | Object remains stationary for a sustained duration | Velocity $\|v\| < v_{\text{stop}}$ for duration $\Delta t \ge T_{\text{stop}}$ | Resets immediately on sustained movement |
+| `SUDDEN_STOP` | Negative acceleration exceeds braking threshold | Deceleration $a = \frac{\Delta v}{\Delta t} \le a_{\text{threshold}}$ | Verified across consecutive frame intervals |
+
+### Verified Event Engine Performance (Real Footage)
+
+Evaluated on static street-corner footage (`data/demo_trafficlight.mp4`, 26.7s / 801 frames, camera `demo-trafficlight`) through the full pipeline (`scripts/persist_video.py`):
+
+| Real, persisted result | Value |
+| :--- | :--- |
+| Avg. detections/frame | 16.13 |
+| Confirmed tracks (unique `object_id`) | 130 |
+| **`LINE_CROSSED` events** | **1** (`object_id=2`, t=9.5s, right→left) |
+| `STOPPED` events | 30 |
+| `OBJECT_APPEARED` / `OBJECT_DISAPPEARED` | 130 / 112 |
+
+Only **one** real line-crossing occurs in this clip — reported exactly as measured, not implied to be more. This camera has only a placeholder/illustrative homography (`configs/cameras/demo-trafficlight.json`, same convention as the built-in `demo` camera's own config) since no real-world survey exists for this stock footage, so no speed or `OVERSPEED` claim is made here — `LINE_CROSSED` is pure pixel-space line-segment geometry and does not depend on the homography's world scale.
+
+**Known condition on this clip**: a permanent tilt-shift/depth-of-field effect in the source footage blurs everything outside a mid-frame focal band. Measured effect (not assumed): 8.12 detections/frame at 0.541 avg. confidence in the sharp band vs. 7.10 detections/frame at 0.496 avg. confidence in the blurred distant band — a modest (~8% relative) reduction, not a severe collapse.
+
+**Standing note**: none of TRACE's three demo/stock videos (this one, plus two aerial clips used for benchmarking only — see [Section 7](#7-inference-benchmarks--performance)) have ground-truth annotations. No Precision/Recall/mAP/MOTA/IDF1 claim is made from any of them — those numbers come exclusively from `data/sample.mp4`'s hand-verified ground truth ([Section 6](#6-formal-evaluation--accuracy)).
 
 ---
 
@@ -267,7 +280,7 @@ Measured on dedicated benchmark scripts (`benchmarks/benchmark.py`) processing 2
 
 ### Demo Footage Benchmarks (Real Stock Video — Separate From the Formal Benchmark Above)
 
-Same reproducible harness (`benchmarks/benchmark.py --source-video`), run against the three real stock videos evaluated for dashboard/README demo use (`yolov8n.pt`, confidence=0.25, CPU). These are real FPS/latency measurements, **not** accuracy claims (see the standing note in [Section 3](#3-key-features)) — reported separately per video, never averaged together:
+Same reproducible harness (`benchmarks/benchmark.py --source-video`), run against the three real stock videos evaluated for dashboard/README demo use (`yolov8n.pt`, confidence=0.25, CPU). These are real FPS/latency measurements, **not** accuracy claims (see the standing note in [Section 4](#4-deterministic-event-engine)) — reported separately per video, never averaged together:
 
 | Video | Frames | Detection FPS | Tracking FPS | End-to-End FPS | Mean / p95 Latency (end-to-end) | CPU (process) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -579,7 +592,7 @@ cd dashboard && npm test
 cd dashboard && npm run lint
 ```
 
-**Total Test Coverage:** **277 automated tests passed**.
+**Total Test Coverage:** **302 automated tests passed** (232 backend pytest + 70 frontend vitest).
 
 ---
 
@@ -598,7 +611,7 @@ cd dashboard && npm run lint
 - [ ] **Zero-Shot Open-Vocabulary Detection**: Integration of YOLO-World for arbitrary textual class queries without retraining.
 - [ ] **Edge Streaming Gateway**: RTSP and WebRTC live stream ingestion pipeline with hardware-accelerated video decoding (NVDEC).
 - [ ] **Edge Fleet Management**: Over-the-air deployment of quantized TensorRT models to NVIDIA Jetson edge nodes.
-- [ ] **Speed Estimation Demo Footage** `[FUTURE WORK]`: none of TRACE's current demo videos have a real, surveyed camera calibration. A legitimate speed-estimation showcase needs real-world measured pixel↔world correspondences for a static camera scene, which we don't currently have — deliberately not faked with a placeholder homography (see [Section 3](#3-key-features)).
+- [ ] **Speed Estimation Demo Footage** `[FUTURE WORK]`: none of TRACE's current demo videos have a real, surveyed camera calibration. A legitimate speed-estimation showcase needs real-world measured pixel↔world correspondences for a static camera scene, which we don't currently have — deliberately not faked with a placeholder homography (see [Section 4](#4-deterministic-event-engine)).
 
 ---
 
