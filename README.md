@@ -591,3 +591,9 @@ If you use or reference TRACE in your research or applications, please cite the 
 | `zhang2022bytetrack` | Multi-Object Tracking | Low-score detection recovery & Kalman state matching | [arXiv:2110.06864](https://arxiv.org/abs/2110.06864) |
 | `jocher2023yolov8` | Object Detection | Decoupled anchor-free head & Mosaic augmentation pipeline | [GitHub](https://github.com/ultralytics/ultralytics) |
 | `bernardin2008evaluating` | Benchmark Standards | Mathematical definitions for MOTA, MOTP, and ID Switches | [Springer EURASIP](https://link.springer.com/article/10.1155/2008/246309) |
+
+---
+
+<div align="center">
+  <sub>Developed with precision by <a href="https://github.com/mariiammaysara"><b>Mariam Maysara</b></a></sub>
+</div>
