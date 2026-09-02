@@ -317,25 +317,23 @@ Measured across real demo video streams (`yolov8n.pt`, confidence = 0.25, CPU):
 
 ## 8. Dashboard & User Interface
 
-The TRACE operator dashboard is built with **React 19**, **Vite**, **Tailwind CSS v4**, and **shadcn / Base UI**, following the core TRACE color system:
+The operator dashboard is built with **React 19**, **Vite**, and **Tailwind CSS v4**, delivering sub-second spatial telemetry and forensic replay:
 
-- **Brand Colors**: Slate / Deep Navy (`#2f4157`, `#567c8e`, `#a2c1d1`)
-- **Semantic Colors**: Danger Violation (`#c94c4c`), Warning (`#c58a24`), Success / Nominal (`#2e7d5b`)
+### Interface Modules
 
-| Interface Module | Role & Interactive Capabilities |
+| Module | Purpose & Interactive Capabilities |
 | :--- | :--- |
-| **Live Telemetry & Vector HUD** | Real-time camera feed with synchronized SVG tracks, detection bounding boxes, zone polygons, and directional tripwires |
-| **Forensic Incident Feed** | Chronological violation log with severity color codes and sub-second click-to-seek video jumping |
-| **Object Profile Panel** | Deep-dive lifecycle panel displaying total dwell time, camera trajectory paths, and linked violation history |
-| **Spatial Analytics & Metrics** | Real-time class distribution charts, event frequency breakdowns, and multi-camera fleet health status |
+| **Live Telemetry & Vector HUD** | Real-time video playback with synchronized SVG bounding boxes, persistent track paths, zone polygons, and floating incident alerts |
+| **Forensic Events Feed** | Chronological violation log with severity color coding and instant sub-second click-to-seek playback jumping |
+| **Object Profile Panel** | Deep-dive trajectory inspector showing dwell durations, path coordinate history, and associated incident links |
+| **Spatial Analytics & Fleet** | Class distribution charts, violation frequency graphs, and multi-camera sensor fleet health status |
 
-### Key UI Capabilities
-1. **Synchronized SVG Vector Overlays**: SVG coordinate projection layer rendered directly over `<video>` elements using `requestAnimationFrame` synchronization (never burned into the video file).
-2. **Sub-Second Incident Click-to-Seek**: Clicking any incident in the **Recent Events** feed instantly jumps the video player to that exact millisecond.
-3. **Pre-Recorded Demo Scenarios (Phase 20)**: Interactive guided walkthroughs for **Restricted Zone Intrusion**, **Tripwire Line Crossing**, **Track Lifecycle**, and a real street-footage **Line Crossing** scenario (`demo-trafficlight` camera) — 4 scenarios total, each powered strictly by real computer vision data, no scripted/fabricated events.
-4. **Real-Time In-Video Event Surfacing**: Prominent floating incident toasts appear automatically as playback reaches real event timestamps, offering one-click jumps to deep forensic investigation.
-5. **Multi-Camera Fleet Management**: Switch feeds on the fly with live status badges.
-6. **Comprehensive Data Integrity**: 100% of dashboard cards, statistics, and graphs reflect real database queries without mock placeholders.
+### Key Architectural Capabilities
+
+- **Synchronized SVG Overlays**: Telemetry projected dynamically over `<video>` elements via `requestAnimationFrame` without altering source video.
+- **Sub-Second Incident Seek**: Click any event card to immediately seek the video player to that exact millisecond.
+- **Interactive Demo Scenarios**: 4 pre-recorded real-footage scenarios (Perimeter Intrusion, Tripwire Crossing, Object Lifecycle, Street Intersection).
+- **100% Data Integrity**: All telemetry cards, graphs, and trajectory inspectors query live PostgreSQL/FastAPI records without mock placeholders.
 
 ---
 
