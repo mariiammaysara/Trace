@@ -131,6 +131,22 @@ class TrajectoryRead(BaseModel):
     points: List[TrackPointRead]
 
 
+class ObjectProfileRead(BaseModel):
+    """GET /objects/{id} -- Phase 19's Object Profile view. Every field here
+    is either a stored column or a real aggregate over stored rows (event
+    count, dwell time); nothing is computed by re-running tracking."""
+
+    id: int
+    object_id: int
+    class_name: str
+    first_seen: float
+    last_seen: float
+    camera_id: str
+    camera_name: Optional[str] = None
+    total_dwell_seconds: float
+    event_count: int
+
+
 class AnalyticsSummary(BaseModel):
     """One bundled response for GET /analytics -- Section 10 lists a single
     endpoint returning "aggregated metrics", so this combines several of

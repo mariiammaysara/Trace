@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { VideoOverlay } from '@/components/VideoOverlay'
+import { LiveIncidentBanner } from '@/components/LiveIncidentBanner'
 import { getVideoStreamUrl } from '@/lib/api'
 import type { Line, TraceEvent, Trajectory, Video, Zone } from '@/lib/api'
 import {
@@ -44,6 +45,12 @@ interface VideoPlayerProps {
   lines: Line[]
   seekRequest?: SeekRequest | null
   cameraName?: string | null
+  /** Phase 19: passed straight through to VideoOverlay -- clicking a
+   * tracked object's box opens its Object Profile. */
+  onSelectObject?: (objectId: number) => void
+  /** Phase 20: surfaces real-time event alerts during demo/playback. */
+  onInvestigateEvent?: (eventId: number) => void
+  activeScenarioTitle?: string | null
 }
 
 export function VideoPlayer({
@@ -54,6 +61,9 @@ export function VideoPlayer({
   lines,
   seekRequest,
   cameraName,
+  onSelectObject,
+  onInvestigateEvent,
+  activeScenarioTitle,
 }: VideoPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -224,15 +234,27 @@ export function VideoPlayer({
 
         {/* Synchronized Vector Overlay */}
         {!mediaError && (
-          <VideoOverlay
-            videoRef={videoRef}
-            videoWidth={videoSize.width}
-            videoHeight={videoSize.height}
-            trajectories={trajectories}
-            events={events}
-            zones={zones}
-            lines={lines}
-          />
+          <>
+            <VideoOverlay
+              videoRef={videoRef}
+              videoWidth={videoSize.width}
+              videoHeight={videoSize.height}
+              trajectories={trajectories}
+              events={events}
+              zones={zones}
+              lines={lines}
+              onSelectObject={onSelectObject}
+            />
+
+            {onInvestigateEvent && (
+              <LiveIncidentBanner
+                currentTime={currentTime}
+                events={events}
+                onInvestigateEvent={onInvestigateEvent}
+                activeScenarioTitle={activeScenarioTitle}
+              />
+            )}
+          </>
         )}
       </div>
 

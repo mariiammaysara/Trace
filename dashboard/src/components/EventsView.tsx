@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EventBadge } from '@/components/EventBadge'
+import { ObjectIdLink } from '@/components/ObjectIdLink'
 import { VideoPlayer, type SeekRequest } from '@/components/VideoPlayer'
 import { listCameraEvents, getObjectTrajectory } from '@/lib/api'
 import type { Camera, TraceEvent, Trajectory } from '@/lib/api'
@@ -35,6 +36,13 @@ interface EventsViewProps {
    * EVENT -> TIMESTAMP -> EVIDENCE -> OBJECT -> TRAJECTORY -> RELATED EVENTS
    * workspace built around one selected event (Phase 10.3 / Section 0). */
   mode?: 'events' | 'investigation'
+  /** Phase 19: opens the Object Profile panel for a clicked #object_id. */
+  onSelectObject?: (objectId: number) => void
+  /** Phase 19: pre-selects this event once its camera's events have loaded --
+   * how the Object Profile panel's "Open incident" links jump straight into
+   * investigation mode instead of leaving the picker empty. */
+  initialEventId?: number | null
+  onInitialEventConsumed?: () => void
 }
 
 /**
@@ -47,7 +55,15 @@ interface EventsViewProps {
  * useCameraScene) so violation-state rendering stays accurate regardless of
  * what the table is currently filtered to. No mock/hardcoded data.
  */
-export function EventsView({ cameras, selectedCameraId, onSelectCamera, mode = 'events' }: EventsViewProps) {
+export function EventsView({
+  cameras,
+  selectedCameraId,
+  onSelectCamera,
+  mode = 'events',
+  onSelectObject,
+  initialEventId,
+  onInitialEventConsumed,
+}: EventsViewProps) {
   const [eventTypeFilter, setEventTypeFilter] = useState<string>(ALL_TYPES_VALUE)
   const [startTimeInput, setStartTimeInput] = useState('')
   const [endTimeInput, setEndTimeInput] = useState('')
@@ -126,6 +142,18 @@ export function EventsView({ cameras, selectedCameraId, onSelectCamera, mode = '
     setSelectedEventId(event.id)
     setSeekRequest({ time: event.timestamp, nonce: Date.now() })
   }
+
+  // Phase 19: the Object Profile panel's "Open incident" links land here --
+  // once this camera's real events have loaded, select the one that was
+  // asked for exactly as if the user had clicked it themselves.
+  useEffect(() => {
+    if (mode !== 'investigation' || initialEventId == null) return
+    const match = events.find((event) => event.id === initialEventId)
+    if (match) {
+      handleSelectEvent(match)
+      onInitialEventConsumed?.()
+    }
+  }, [mode, initialEventId, events])
 
   function handleRowKeyDown(event: KeyboardEvent, traceEvent: TraceEvent) {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -286,7 +314,11 @@ export function EventsView({ cameras, selectedCameraId, onSelectCamera, mode = '
                         <div className="flex flex-col gap-0.5 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <EventBadge eventType={event.event_type} />
-                            <span className="text-xs font-mono font-medium text-ink">#{event.object_id}</span>
+                            <ObjectIdLink
+                              objectId={event.object_id}
+                              onSelectObject={onSelectObject}
+                              className="text-xs font-mono font-medium text-ink"
+                            />
                           </div>
                           <span className="flex items-center gap-1 text-[11px] text-ink-subtle font-mono tabular-nums">
                             <Clock className="h-2.5 w-2.5" />
@@ -324,7 +356,7 @@ export function EventsView({ cameras, selectedCameraId, onSelectCamera, mode = '
                     <div className="flex items-center gap-2">
                       <EventBadge eventType={selectedEvent.event_type} />
                       <span className="text-sm font-semibold text-ink">
-                        #{selectedEvent.object_id} {selectedEvent.class_name}
+                        <ObjectIdLink objectId={selectedEvent.object_id} onSelectObject={onSelectObject} /> {selectedEvent.class_name}
                       </span>
                     </div>
                     <span className="flex items-center gap-1 text-xs font-mono text-ink-subtle tabular-nums">
@@ -375,6 +407,7 @@ export function EventsView({ cameras, selectedCameraId, onSelectCamera, mode = '
                     lines={lines}
                     seekRequest={seekRequest}
                     cameraName={selectedCamera?.name ?? selectedCameraId}
+                    onSelectObject={onSelectObject}
                   />
                 )}
 
@@ -451,18 +484,24 @@ export function EventsView({ cameras, selectedCameraId, onSelectCamera, mode = '
                         </p>
                       ) : (
                         relatedEvents.map((event) => (
-                          <button
+                          <div
                             key={event.id}
-                            type="button"
+                            role="button"
+                            tabIndex={0}
                             onClick={() => handleSelectEvent(event)}
-                            className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-surface-alt/60 focus-visible:outline-2 focus-visible:outline-accent"
+                            onKeyDown={(keyEvent) => handleRowKeyDown(keyEvent, event)}
+                            className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-left text-xs cursor-pointer hover:bg-surface-alt/60 focus-visible:outline-2 focus-visible:outline-accent"
                           >
                             <span className="flex items-center gap-1.5 min-w-0">
                               <EventBadge eventType={event.event_type} />
-                              <span className="font-mono text-ink-subtle">#{event.object_id}</span>
+                              <ObjectIdLink
+                                objectId={event.object_id}
+                                onSelectObject={onSelectObject}
+                                className="font-mono text-ink-subtle"
+                              />
                             </span>
                             <span className="font-mono text-ink-subtle tabular-nums shrink-0">{event.timestamp.toFixed(1)}s</span>
-                          </button>
+                          </div>
                         ))
                       )}
                     </CardContent>
@@ -538,7 +577,15 @@ export function EventsView({ cameras, selectedCameraId, onSelectCamera, mode = '
       )}
 
       {video && (
-        <VideoPlayer video={video} trajectories={trajectories} events={events} zones={zones} lines={lines} seekRequest={seekRequest} />
+        <VideoPlayer
+          video={video}
+          trajectories={trajectories}
+          events={events}
+          zones={zones}
+          lines={lines}
+          seekRequest={seekRequest}
+          onSelectObject={onSelectObject}
+        />
       )}
 
       {filterBar}
@@ -588,7 +635,9 @@ export function EventsView({ cameras, selectedCameraId, onSelectCamera, mode = '
                   <TableCell>
                     <EventBadge eventType={event.event_type} />
                   </TableCell>
-                  <TableCell className="font-mono">#{event.object_id}</TableCell>
+                  <TableCell className="font-mono">
+                    <ObjectIdLink objectId={event.object_id} onSelectObject={onSelectObject} />
+                  </TableCell>
                   <TableCell>{event.class_name}</TableCell>
                   <TableCell className="tabular-nums text-right font-mono">{Math.round(event.confidence * 100)}%</TableCell>
                 </TableRow>

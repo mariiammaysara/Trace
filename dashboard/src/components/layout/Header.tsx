@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { Video, Radio, RefreshCw, Menu } from 'lucide-react'
+import { Video, Radio, RefreshCw, Menu, Sparkles } from 'lucide-react'
 import type { Camera } from '@/lib/api'
 
 interface HeaderProps {
@@ -13,6 +13,8 @@ interface HeaderProps {
   onToggleMobileMenu?: () => void
   onRefresh?: () => void
   isRefreshing?: boolean
+  /** Phase 20: Launches the pre-recorded demo scenarios modal */
+  onOpenDemoModal?: () => void
 }
 
 /**
@@ -31,6 +33,7 @@ export function Header({
   onToggleMobileMenu,
   onRefresh,
   isRefreshing = false,
+  onOpenDemoModal,
 }: HeaderProps) {
   const [timeString, setTimeString] = useState<string>('')
 
@@ -75,8 +78,21 @@ export function Header({
         </div>
       </div>
 
-      {/* Right: camera/source + essential actions */}
+      {/* Right: camera/source + demo scenarios + essential actions */}
       <div className="flex items-center gap-2.5">
+        {onOpenDemoModal && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onOpenDemoModal}
+            className="h-8 gap-1.5 border-accent/40 bg-accent/5 text-ink hover:bg-accent/15 text-xs font-semibold shadow-2xs"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-secondary" />
+            <span className="hidden sm:inline">Demo Scenarios</span>
+          </Button>
+        )}
+
         <Select
           value={selectedCameraId}
           onValueChange={(value) => onSelectCamera(value)}

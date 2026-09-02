@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { EventBadge } from '@/components/EventBadge'
+import { ObjectIdLink } from '@/components/ObjectIdLink'
 import { Button } from '@/components/ui/button'
 import {
   AlertTriangle,
@@ -18,6 +19,8 @@ interface RecentEventsFeedProps {
   selectedEventId?: number | null
   onSelectEvent?: (event: TraceEvent) => void
   onViewAllEvents?: () => void
+  /** Phase 19: opens the Object Profile panel for a clicked #object_id. */
+  onSelectObject?: (objectId: number) => void
   className?: string
 }
 
@@ -28,6 +31,7 @@ export function RecentEventsFeed({
   selectedEventId,
   onSelectEvent,
   onViewAllEvents,
+  onSelectObject,
   className,
 }: RecentEventsFeedProps) {
   const [activeFilter, setActiveFilter] = useState<FilterTier>('all')
@@ -154,7 +158,7 @@ export function RecentEventsFeed({
                     <div className="flex items-center gap-1.5">
                       <EventBadge eventType={event.event_type} />
                       <span className="text-xs font-mono font-medium text-ink">
-                        #{event.object_id} {event.class_name}
+                        <ObjectIdLink objectId={event.object_id} onSelectObject={onSelectObject} /> {event.class_name}
                       </span>
                     </div>
 

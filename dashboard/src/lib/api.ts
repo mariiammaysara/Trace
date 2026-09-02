@@ -137,6 +137,36 @@ export function getObjectTrajectory(objectId: number): Promise<Trajectory> {
   return apiGet<Trajectory>(`/objects/${objectId}/trajectory`)
 }
 
+/**
+ * GET /objects/{id} -- Phase 19's Object Profile view. total_dwell_seconds
+ * and event_count are real aggregates computed server-side over this
+ * object's own stored events (src/database/repository.py's
+ * total_dwell_time_for_object / get_events_for_object) -- not recomputed or
+ * duplicated here.
+ */
+export interface ObjectProfile {
+  id: number
+  object_id: number
+  class_name: string
+  first_seen: number
+  last_seen: number
+  camera_id: string
+  camera_name: string | null
+  total_dwell_seconds: number
+  event_count: number
+}
+
+export function getObjectProfile(id: number): Promise<ObjectProfile> {
+  return apiGet<ObjectProfile>(`/objects/${id}`)
+}
+
+/** GET /objects/{id}/events -- this object's own events, oldest first, for
+ * the Object Profile view's event list (reuses the same EventRead shape as
+ * a camera's event list). */
+export function getObjectEvents(id: number): Promise<TraceEvent[]> {
+  return apiGet<TraceEvent[]>(`/objects/${id}/events`)
+}
+
 export interface EventFilters {
   eventType?: string
   startTime?: number

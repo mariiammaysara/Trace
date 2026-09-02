@@ -1,6 +1,6 @@
 """TRACE's FastAPI app: POST /videos, POST /cameras, GET /cameras/{camera_id}/events,
-GET /objects/{id}/trajectory, GET /analytics, POST /zones, POST /lines,
-POST /agent/query, POST /alerts, GET /cameras/{camera_id}/alerts,
+GET /objects/{id}/trajectory, GET /objects/{id}, GET /objects/{id}/events, GET /analytics,
+POST /zones, POST /lines, POST /agent/query, POST /alerts, GET /cameras/{camera_id}/alerts,
 POST /agent/actions/{id}/approve, GET /agent/actions/{id}, GET /evaluation.
 
 Error handling:

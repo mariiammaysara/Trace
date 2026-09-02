@@ -7,7 +7,7 @@ instead of duplicating queries in route handlers.
 from __future__ import annotations
 
 import datetime as dt
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -196,6 +196,39 @@ def get_events_for_object(session: Session, tracked_object: TrackedObject) -> Li
     return list(
         session.execute(select(Event).where(Event.object_id == tracked_object.id).order_by(Event.timestamp)).scalars()
     )
+
+
+def total_dwell_time_for_object(session: Session, tracked_object: TrackedObject) -> float:
+    """Cumulative zone dwell time for one object -- Section 4/Phase 6's
+    dwell definition (sum of entry->exit visit durations, across every
+    zone visit), computed here by pairing the object's own real, already
+    -stored ZONE_ENTERED/ZONE_EXITED events in timestamp order. This is
+    the exact same open/close pairing trajectories.dwell.DwellTracker.update()
+    performs live, re-derived from persisted events instead of a live
+    per-frame stream -- no new zone-membership or tracking logic, purely a
+    presentation-time sum over data the pipeline already wrote.
+
+    A visit still open when tracking ended (a ZONE_ENTERED with no matching
+    ZONE_EXITED) counts through the object's last_seen, mirroring
+    DwellTracker.total_dwell_time(include_open=True)'s live "duration so
+    far" -- last_seen is the last real moment this object is known to
+    exist, the offline equivalent of "now".
+    """
+    events = get_events_for_object(session, tracked_object)
+    zone_events = [e for e in events if e.event_type in ("ZONE_ENTERED", "ZONE_EXITED") and e.zone_id is not None]
+
+    open_entries: Dict[int, float] = {}
+    total = 0.0
+    for event in zone_events:
+        if event.event_type == "ZONE_ENTERED":
+            open_entries.setdefault(event.zone_id, event.timestamp)
+        elif event.event_type == "ZONE_EXITED" and event.zone_id in open_entries:
+            total += event.timestamp - open_entries.pop(event.zone_id)
+
+    for entry_timestamp in open_entries.values():
+        total += max(tracked_object.last_seen - entry_timestamp, 0.0)
+
+    return total
 
 
 def get_track_points_for_object(session: Session, tracked_object: TrackedObject) -> List[TrackPoint]:

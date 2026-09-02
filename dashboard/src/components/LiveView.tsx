@@ -4,12 +4,20 @@ import { RecentEventsFeed } from '@/components/RecentEventsFeed'
 import { useCameraScene } from '@/hooks/useCameraScene'
 import type { Camera, TraceEvent } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { Layers, VideoOff, Video, Shapes, Minus } from 'lucide-react'
+import { Sparkles, Layers, VideoOff, Video, Shapes, Minus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 interface LiveViewProps {
   cameras: Camera[]
   selectedCameraId: string | null
   onSelectCamera: (cameraId: string | null) => void
+  /** Phase 19: opens the Object Profile panel for a clicked #object_id. */
+  onSelectObject?: (objectId: number) => void
+  /** Phase 20: Demo scenarios and direct incident jump */
+  externalSeekRequest?: SeekRequest | null
+  onInvestigateEvent?: (eventId: number) => void
+  activeScenarioTitle?: string | null
+  onOpenDemoModal?: () => void
 }
 
 /**
@@ -21,16 +29,27 @@ interface LiveViewProps {
  * the single global one owned by App.tsx / the Header, not a page-local
  * duplicate.
  */
-export function LiveView({ cameras, selectedCameraId, onSelectCamera }: LiveViewProps) {
+export function LiveView({
+  cameras,
+  selectedCameraId,
+  onSelectCamera,
+  onSelectObject,
+  externalSeekRequest,
+  onInvestigateEvent,
+  activeScenarioTitle,
+  onOpenDemoModal,
+}: LiveViewProps) {
   const { video, trajectories, events, zones, lines, error } = useCameraScene(selectedCameraId)
   const selectedCamera = cameras.find((c) => c.camera_id === selectedCameraId)
 
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null)
-  const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null)
+  const [internalSeekRequest, setInternalSeekRequest] = useState<SeekRequest | null>(null)
+
+  const effectiveSeekRequest = externalSeekRequest ?? internalSeekRequest
 
   function handleSelectEvent(event: TraceEvent) {
     setSelectedEventId(event.id)
-    setSeekRequest({ time: event.timestamp, nonce: Date.now() })
+    setInternalSeekRequest({ time: event.timestamp, nonce: Date.now() })
   }
 
   return (
@@ -90,23 +109,38 @@ export function LiveView({ cameras, selectedCameraId, onSelectCamera }: LiveView
 
           {/* Video workspace */}
           <div className="lg:col-span-7 flex flex-col gap-3">
-            {/* Telemetry strip -- one dense row instead of three separate cards */}
-            <div className="flex items-center divide-x divide-border rounded-md border border-border bg-surface">
-              <div className="flex items-center gap-1.5 px-3 py-1.5">
-                <Layers className="h-3 w-3 text-ink-subtle shrink-0" />
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">Tracks</span>
-                <span className="font-mono text-sm font-semibold tabular-nums text-ink">{trajectories.length}</span>
+            {/* Telemetry strip + Demo scenario action */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center divide-x divide-border rounded-md border border-border bg-surface shadow-2xs">
+                <div className="flex items-center gap-1.5 px-3 py-1.5">
+                  <Layers className="h-3 w-3 text-ink-subtle shrink-0" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">Tracks</span>
+                  <span className="font-mono text-sm font-semibold tabular-nums text-ink">{trajectories.length}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5">
+                  <Shapes className="h-3 w-3 text-ink-subtle shrink-0" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">Zones</span>
+                  <span className="font-mono text-sm font-semibold tabular-nums text-ink">{zones.length}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5">
+                  <Minus className="h-3 w-3 text-ink-subtle shrink-0" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">Lines</span>
+                  <span className="font-mono text-sm font-semibold tabular-nums text-ink">{lines.length}</span>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5">
-                <Shapes className="h-3 w-3 text-ink-subtle shrink-0" />
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">Zones</span>
-                <span className="font-mono text-sm font-semibold tabular-nums text-ink">{zones.length}</span>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5">
-                <Minus className="h-3 w-3 text-ink-subtle shrink-0" />
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">Lines</span>
-                <span className="font-mono text-sm font-semibold tabular-nums text-ink">{lines.length}</span>
-              </div>
+
+              {onOpenDemoModal && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={onOpenDemoModal}
+                  className="gap-1.5 border-accent/40 bg-accent/5 text-ink hover:bg-accent/15 text-xs font-semibold shadow-2xs"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-secondary" />
+                  <span>Demo Scenarios</span>
+                </Button>
+              )}
             </div>
 
             {video ? (
@@ -116,8 +150,11 @@ export function LiveView({ cameras, selectedCameraId, onSelectCamera }: LiveView
                 events={events}
                 zones={zones}
                 lines={lines}
-                seekRequest={seekRequest}
+                seekRequest={effectiveSeekRequest}
                 cameraName={selectedCamera?.name ?? selectedCameraId}
+                onSelectObject={onSelectObject}
+                onInvestigateEvent={onInvestigateEvent}
+                activeScenarioTitle={activeScenarioTitle}
               />
             ) : (
               !error && (
@@ -137,6 +174,7 @@ export function LiveView({ cameras, selectedCameraId, onSelectCamera }: LiveView
               events={events}
               selectedEventId={selectedEventId}
               onSelectEvent={handleSelectEvent}
+              onSelectObject={onSelectObject}
             />
           </div>
         </div>

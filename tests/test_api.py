@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from agent import actions
 from agent.agent import AgentAnswer, ToolCallRecord
 from api.app import app
 from api.deps import get_agent, get_db
 from database import repository
+from database.models import TrackedObject
 from events.event import Event as PipelineEvent
 
 
@@ -251,6 +253,102 @@ def test_get_object_trajectory_includes_bbox_when_provided(client, db_session):
 
 def test_get_object_trajectory_unknown_id_returns_404(client):
     response = client.get("/objects/999999/trajectory")
+    assert response.status_code == 404
+
+
+# --- GET /objects/{id}, GET /objects/{id}/events ---
+
+
+def _seed_object_with_lifecycle(db_session):
+    """One object with two completed zone visits, one non-zone event, and a
+    known first/last seen -- lets tests assert exact aggregation numbers
+    (15.0 + 12.0 = 27.0 dwell seconds, 5 total events) instead of just
+    checking the endpoint renders something."""
+    camera = repository.get_or_create_camera(db_session, "cam_profile", name="Profile Camera")
+    repository.get_or_create_zone(db_session, camera, "z1", [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)])
+    repository.get_or_create_object(db_session, camera, object_id=1, class_name="person", timestamp=0.0)
+    repository.get_or_create_object(db_session, camera, object_id=1, class_name="person", timestamp=60.0)
+
+    def _add(event_type, timestamp, metadata=None):
+        repository.add_event_from_pipeline(
+            db_session, camera,
+            PipelineEvent(
+                event_type=event_type, object_id=1, class_name="person",
+                timestamp=timestamp, camera_id="cam_profile", confidence=0.9, metadata=metadata or {},
+            ),
+        )
+
+    _add("OBJECT_APPEARED", 0.0)
+    _add("ZONE_ENTERED", 10.0, {"zone_id": "z1"})
+    _add("ZONE_EXITED", 25.0, {"zone_id": "z1"})  # visit 1: 15.0s
+    _add("ZONE_ENTERED", 40.0, {"zone_id": "z1"})
+    _add("ZONE_EXITED", 52.0, {"zone_id": "z1"})  # visit 2: 12.0s
+    db_session.flush()
+
+    obj = db_session.execute(
+        select(TrackedObject).where(TrackedObject.camera_id == camera.id, TrackedObject.object_id == 1)
+    ).scalar_one()
+    return camera, obj
+
+
+def test_get_object_profile_aggregates_dwell_time_and_event_count_correctly(client, db_session):
+    camera, obj = _seed_object_with_lifecycle(db_session)
+
+    response = client.get(f"/objects/{obj.id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["class_name"] == "person"
+    assert body["first_seen"] == 0.0
+    assert body["last_seen"] == 60.0
+    assert body["camera_id"] == "cam_profile"
+    assert body["camera_name"] == "Profile Camera"
+    # Real aggregation math, not just "some number": two completed zone
+    # visits (15.0s + 12.0s), five stored events total.
+    assert body["total_dwell_seconds"] == 27.0
+    assert body["event_count"] == 5
+
+
+def test_get_object_profile_counts_a_still_open_zone_visit_through_last_seen(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_open_visit")
+    repository.get_or_create_zone(db_session, camera, "z1", [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)])
+    repository.get_or_create_object(db_session, camera, object_id=1, class_name="person", timestamp=0.0)
+    repository.get_or_create_object(db_session, camera, object_id=1, class_name="person", timestamp=30.0)
+    repository.add_event_from_pipeline(
+        db_session, camera,
+        PipelineEvent(
+            event_type="ZONE_ENTERED", object_id=1, class_name="person",
+            timestamp=20.0, camera_id="cam_open_visit", confidence=0.9, metadata={"zone_id": "z1"},
+        ),
+    )
+    db_session.flush()
+
+    obj = db_session.execute(
+        select(TrackedObject).where(TrackedObject.camera_id == camera.id, TrackedObject.object_id == 1)
+    ).scalar_one()
+
+    response = client.get(f"/objects/{obj.id}")
+    # No ZONE_EXITED was ever recorded -- the visit counts through last_seen
+    # (30.0 - 20.0 = 10.0), matching DwellTracker's live "duration so far".
+    assert response.json()["total_dwell_seconds"] == 10.0
+
+
+def test_get_object_profile_unknown_id_returns_404(client):
+    response = client.get("/objects/999999")
+    assert response.status_code == 404
+
+
+def test_get_object_events_success(client, db_session):
+    camera, obj = _seed_object_with_lifecycle(db_session)
+
+    response = client.get(f"/objects/{obj.id}/events")
+    assert response.status_code == 200
+    body = response.json()
+    assert [e["event_type"] for e in body] == ["OBJECT_APPEARED", "ZONE_ENTERED", "ZONE_EXITED", "ZONE_ENTERED", "ZONE_EXITED"]
+    assert all(e["object_id"] == obj.id for e in body)
+
+
+def test_get_object_events_unknown_id_returns_404(client):
+    response = client.get("/objects/999999/events")
     assert response.status_code == 404
 
 

@@ -3,6 +3,7 @@ import type { RefObject } from 'react'
 import type { Line, TraceEvent, Trajectory, Zone } from '@/lib/api'
 import { findNearestPoint, getObjectViolationState } from '@/lib/overlay'
 import type { ViolationState } from '@/lib/overlay'
+import { cn } from '@/lib/utils'
 
 interface VideoOverlayProps {
   videoRef: RefObject<HTMLVideoElement | null>
@@ -12,6 +13,10 @@ interface VideoOverlayProps {
   events: TraceEvent[]
   zones: Zone[]
   lines: Line[]
+  /** Phase 19: clicking a tracked object's box/label opens its Object
+   * Profile -- the "video overlay" entry point Section 0's "clicking an
+   * object_id anywhere" requires. */
+  onSelectObject?: (objectId: number) => void
 }
 
 /** stroke/fill classes per violation state -- brand accent for normal
@@ -42,6 +47,7 @@ export function VideoOverlay({
   events,
   zones,
   lines,
+  onSelectObject,
 }: VideoOverlayProps) {
   const [currentTime, setCurrentTime] = useState(0)
   const frameRef = useRef<number>(0)
@@ -95,7 +101,28 @@ export function VideoOverlay({
         )
 
         return (
-          <g key={trajectory.object_id} className={`${STATE_CLASSES[state]} transition-colors duration-200 ease-out`}>
+          <g
+            key={trajectory.object_id}
+            className={cn(
+              STATE_CLASSES[state],
+              'transition-colors duration-200 ease-out',
+              onSelectObject && 'pointer-events-auto cursor-pointer',
+            )}
+            role={onSelectObject ? 'button' : undefined}
+            tabIndex={onSelectObject ? 0 : undefined}
+            aria-label={onSelectObject ? `Open object #${trajectory.object_id}'s profile` : undefined}
+            onClick={onSelectObject ? () => onSelectObject(trajectory.object_id) : undefined}
+            onKeyDown={
+              onSelectObject
+                ? (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      onSelectObject(trajectory.object_id)
+                    }
+                  }
+                : undefined
+            }
+          >
             {trail.length > 1 && (
               <polyline
                 points={trail.map((point) => `${point.x},${point.y}`).join(' ')}

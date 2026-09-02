@@ -9,6 +9,10 @@ import { AnalyticsView } from '@/components/AnalyticsView'
 import { AlertsView } from '@/components/AlertsView'
 import { VisionAgentView } from '@/components/VisionAgentView'
 import { EvaluationView } from '@/components/EvaluationView'
+import { ObjectProfilePanel } from '@/components/ObjectProfilePanel'
+import { DemoScenariosModal } from '@/components/DemoScenariosModal'
+import { type DemoScenario } from '@/lib/demoScenarios'
+import { type SeekRequest } from '@/components/VideoPlayer'
 import { listCameras, type Camera } from '@/lib/api'
 
 const VIEW_METADATA: Record<ActiveView, { title: string; subtitle: string }> = {
@@ -58,6 +62,15 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
+  // Phase 19: Object Profile Panel
+  const [openObjectId, setOpenObjectId] = useState<number | null>(null)
+  const [pendingInvestigationEventId, setPendingInvestigationEventId] = useState<number | null>(null)
+
+  // Phase 20: Demo Scenarios & In-Demo Event Notification Stream
+  const [isDemoModalOpen, setIsDemoModalOpen] = useState(false)
+  const [activeScenario, setActiveScenario] = useState<DemoScenario | null>(null)
+  const [demoSeekRequest, setDemoSeekRequest] = useState<SeekRequest | null>(null)
+
   const fetchCameras = () => {
     setIsRefreshing(true)
     listCameras()
@@ -77,6 +90,18 @@ function App() {
   useEffect(() => {
     fetchCameras()
   }, [])
+
+  function handleLaunchScenario(scenario: DemoScenario) {
+    setSelectedCameraId(scenario.cameraId)
+    setActiveScenario(scenario)
+    setActiveView('live')
+    setDemoSeekRequest({ time: scenario.startTime, nonce: Date.now() })
+  }
+
+  function handleInvestigateEvent(eventId: number) {
+    setPendingInvestigationEventId(eventId)
+    setActiveView('investigations')
+  }
 
   const currentMeta = VIEW_METADATA[activeView] ?? VIEW_METADATA.dashboard
 
@@ -124,6 +149,7 @@ function App() {
           onToggleMobileMenu={() => setMobileMenuOpen(!mobileMenuOpen)}
           onRefresh={fetchCameras}
           isRefreshing={isRefreshing}
+          onOpenDemoModal={() => setIsDemoModalOpen(true)}
         />
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -143,6 +169,11 @@ function App() {
               cameras={cameras}
               selectedCameraId={selectedCameraId}
               onSelectCamera={setSelectedCameraId}
+              onSelectObject={setOpenObjectId}
+              externalSeekRequest={demoSeekRequest}
+              onInvestigateEvent={handleInvestigateEvent}
+              activeScenarioTitle={activeScenario?.title}
+              onOpenDemoModal={() => setIsDemoModalOpen(true)}
             />
           )}
           {activeView === 'cameras' && (
@@ -150,7 +181,6 @@ function App() {
               cameras={cameras}
               selectedCameraId={selectedCameraId}
               onSelectCamera={setSelectedCameraId}
-              onNavigateToLive={() => setActiveView('live')}
             />
           )}
           {activeView === 'events' && (
@@ -159,6 +189,7 @@ function App() {
               selectedCameraId={selectedCameraId}
               onSelectCamera={setSelectedCameraId}
               mode="events"
+              onSelectObject={setOpenObjectId}
             />
           )}
           {activeView === 'investigations' && (
@@ -167,6 +198,9 @@ function App() {
               selectedCameraId={selectedCameraId}
               onSelectCamera={setSelectedCameraId}
               mode="investigation"
+              onSelectObject={setOpenObjectId}
+              initialEventId={pendingInvestigationEventId}
+              onInitialEventConsumed={() => setPendingInvestigationEventId(null)}
             />
           )}
           {activeView === 'analytics' && (
@@ -176,14 +210,36 @@ function App() {
               onSelectCamera={setSelectedCameraId}
             />
           )}
-
-          {activeView === 'alerts' && <AlertsView cameras={cameras} />}
-
+          {activeView === 'alerts' && (
+            <AlertsView
+              cameras={cameras}
+              selectedCameraId={selectedCameraId}
+              onSelectCamera={setSelectedCameraId}
+            />
+          )}
           {activeView === 'agent' && <VisionAgentView />}
-
           {activeView === 'evaluation' && <EvaluationView />}
         </main>
       </div>
+
+      {/* Global Object Profile Panel (Phase 19) */}
+      <ObjectProfilePanel
+        objectId={openObjectId}
+        onClose={() => setOpenObjectId(null)}
+        onOpenIncident={(eventId) => {
+          setOpenObjectId(null)
+          setPendingInvestigationEventId(eventId)
+          setActiveView('investigations')
+        }}
+      />
+
+      {/* Global Demo Scenarios Modal (Phase 20) */}
+      <DemoScenariosModal
+        isOpen={isDemoModalOpen}
+        onClose={() => setIsDemoModalOpen(false)}
+        onLaunchScenario={handleLaunchScenario}
+        activeScenarioId={activeScenario?.id}
+      />
     </div>
   )
 }
