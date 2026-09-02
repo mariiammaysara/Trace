@@ -178,16 +178,16 @@ The Event Engine evaluates deterministic spatial and kinetic rules over trajecto
 
 <br>
 
-### Kinematic Formulas & Trigger Logic
+### Kinematic Event Formulas
 
-| Trigger Metric | Mathematical Formula | Implementation Context |
-| :--- | :--- | :--- |
-| **Instant Speed ($v$)** | $v = \frac{\|p_t - p_{t-\Delta t}\|}{\Delta t}$ | Measured in real-world ground meters via 3×3 metric homography |
-| **Deceleration Rate ($a$)** | $a = \frac{v_t - v_{t-\Delta t}}{\Delta t}$ | Emergency braking anomaly trigger when $a \le -a_{\text{max}}$ |
-| **Loitering Dwell ($T$)** | $T_{\text{dwell}} = t_{\text{current}} - t_{\text{entry}}$ | Restricted zone dwell violation when $T_{\text{dwell}} \ge T_{\text{limit}}$ |
-| **Tripwire Crossing** | $(p_1 \times p_2) \cdot (q_1 \times q_2) < 0$ | Directional vector segment intersection test |
+$$
+v = \frac{\|p_t - p_{t-\Delta t}\|}{\Delta t} \qquad\qquad a = \frac{v_t - v_{t-\Delta t}}{\Delta t}
+$$
 
-<br>
+- **Instant Speed ($v$)**: Ground-plane metric speed estimated via 3×3 planar homography matrix.
+- **Deceleration ($a$)**: Negative acceleration rate, triggering emergency braking alerts when $a \le -a_{\text{max}}$.
+- **Loitering Dwell ($T_{\text{dwell}}$)**: Accumulated dwell duration within a polygon ($T_{\text{dwell}} = t_{\text{now}} - t_{\text{entry}} \ge T_{\text{limit}}$).
+- **Tripwire Crossing**: Directional vector intersection test $(p_1 \times p_2) \cdot (q_1 \times q_2) < 0$.
 
 ### Verified Empirical Results (`demo_trafficlight.mp4`)
 
@@ -205,40 +205,33 @@ Evaluated on static street-corner footage (26.7s / 801 frames, camera `demo-traf
 
 ## 5. Model Training & Domain Adaptation
 
-TRACE provides a structured two-stage fine-tuning pipeline tailored for surveillance domain adaptation:
-
-<br>
+TRACE provides a structured two-stage fine-tuning pipeline tailored for surveillance camera feeds.
 
 ### Two-Stage Training Pipeline
 
-1. **Stage 1: Class-Narrowing Fine-Tuning**  
-   Isolates the 6 target urban mobility classes from COCO128 while freezing deep backbone layers to align the classification head.
+- **Stage 1: Class-Narrowing Fine-Tuning**  
+  Isolates the 6 target urban mobility classes from COCO128 while freezing deep backbone layers to align the classification head.
 
-<br>
-
-2. **Stage 2: Scene Domain Adaptation**  
-   Fine-tunes the detection head on domain-specific camera frames under challenging surveillance mount angles, lighting shifts, and perspective compressions.
-
-<br>
+- **Stage 2: Scene Domain Adaptation**  
+  Fine-tunes the detection head on domain-specific camera frames under challenging surveillance mount angles, lighting shifts, and perspective compressions.
 
 ### Training Loss Formulation & Schedule
 
-| Parameter | Formulation / Setting | Description |
-| :--- | :--- | :--- |
-| **Multi-Task Loss ($\mathcal{L}_{\text{total}}$)** | $\lambda_{\text{box}}\mathcal{L}_{\text{box}} + \lambda_{\text{cls}}\mathcal{L}_{\text{cls}} + \lambda_{\text{dfl}}\mathcal{L}_{\text{dfl}}$ | Combined bounding box regression, classification, and DFL loss |
-| **Learning Rate Schedule** | `1e-3` (Stage 1) $\rightarrow$ `1e-4` (Stage 2) | Fast head alignment followed by conservative domain fine-tuning |
-| **Data Augmentations** | Mosaic ($p=1.0$), HSV Jitter, Perspective Warp | Geometric and photometric invariance for surveillance cameras |
+$$
+\mathcal{L}_{\text{total}} = \lambda_{\text{box}}\mathcal{L}_{\text{box}} + \lambda_{\text{cls}}\mathcal{L}_{\text{cls}} + \lambda_{\text{dfl}}\mathcal{L}_{\text{dfl}}
+$$
 
-<br>
+- **Learning Rate Schedule**: `1e-3` (Stage 1 initial) $\rightarrow$ `1e-4` (Stage 2 domain adaptation)
+- **Data Augmentations**: Mosaic ($p=1.0$), HSV color jitter, and perspective distortion
 
 ### Target Class Hierarchy
 
 | Class ID | Class Name | Category | Primary Surveillance Purpose |
-| :--- | :--- | :--- | :--- |
+| :---: | :--- | :--- | :--- |
 | `0` | `person` | Pedestrian | Sidewalk occupancy, loitering, perimeter breaches |
 | `1` | `bicycle` | Micro-mobility | Dedicated cycle lane monitoring, helmet compliance |
 | `2` | `car` | Light Vehicle | Speed compliance, parking zone violations |
-| `3` | `motorcycle`| Light Vehicle | Lane filtering, speed violations |
+| `3` | `motorcycle` | Light Vehicle | Lane filtering, speed violations |
 | `4` | `bus` | Transit | Transit lane enforcement, dwell-time analytics |
 | `5` | `truck` | Heavy Freight | Restricted route violations, logistics tracking |
 
@@ -248,15 +241,15 @@ TRACE provides a structured two-stage fine-tuning pipeline tailored for surveill
 
 TRACE is evaluated across held-out generalization datasets and real-world surveillance video footage.
 
-<br>
-
 ### Metric Formulations & Criteria
 
-| Metric | Mathematical Formula | Evaluation Scope |
-| :--- | :--- | :--- |
-| **MOTA** (Tracking Accuracy) | $1 - \frac{\text{FN} + \text{FP} + \text{IDSW}}{\text{GT}}$ | Overall multi-object detection and tracking consistency |
-| **IDF1** (Identity F1 Score) | $\frac{2 \cdot \text{IDTP}}{2 \cdot \text{IDTP} + \text{IDFP} + \text{IDFN}}$ | Identity preservation and resistance to ID switches |
-| **mAP** (Detection Accuracy) | $\int_0^1 p(r) \, dr \quad (\text{IoU } 0.50 : 0.95)$ | Mean Average Precision across classification IoU thresholds |
+$$
+\text{MOTA} = 1 - \frac{\text{FN} + \text{FP} + \text{IDSW}}{\text{GT}} \qquad\qquad \text{IDF1} = \frac{2 \cdot \text{IDTP}}{2 \cdot \text{IDTP} + \text{IDFP} + \text{IDFN}}
+$$
+
+- **MOTA (Tracking Accuracy)**: Measures overall tracking consistency across false positives, false negatives, and ID switches.
+- **IDF1 (Identity F1 Score)**: Evaluates track identity preservation across occlusions and crossings.
+- **mAP (Detection Accuracy)**: Mean Average Precision computed across IoU thresholds [0.50 : 0.95].
 
 <br>
 
