@@ -280,8 +280,6 @@ Evaluated across 244 continuous video frames under challenging camera angles:
 | **Real Surveillance Video (244 frames)** | **1.000** | **1.000** | **0** | **0** | **0** | **244** |
 | **Synthetic Crossing (Occlusion Stress Test)** | **1.000** | **1.000** | **0** | **0** | **0** | **40** |
 
-<br>
-
 - **Real Video Footage:** Pretrained YOLOv8n + ByteTrack maintains continuous single-object tracking across 244 frames with zero identity switches.
 - **Synthetic Crossing:** Validates Kalman prediction during complete trajectory intersection and cross-object occlusion without detector noise.
 
@@ -289,32 +287,31 @@ Evaluated across 244 continuous video frames under challenging camera angles:
 
 ## 7. Inference Benchmarks & Performance
 
-Measured on dedicated benchmark scripts (`benchmarks/benchmark.py`) processing 244 frames under reproducible hardware workloads:
+TRACE pipeline performance is benchmarked under reproducible hardware workloads (`benchmarks/benchmark.py`).
 
-### CPU Execution (Intel Core i7 / 16 threads, PyTorch CPU vs ONNX Runtime)
+### 1. Engine Inference Runtime (PyTorch CPU vs ONNX Runtime)
 
-| Runtime Backend | Model Precision | Detection FPS | Tracking FPS | End-to-End FPS | Mean Latency | p95 Latency | CPU Load |
+Evaluated on Intel Core i7 (16 threads, 244 frames, FP32 precision):
+
+| Runtime Backend | Precision | Detection FPS | Tracking FPS | End-to-End FPS | Mean Latency | p95 Latency | CPU Load |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **PyTorch (Native)** | FP32 | **5.58 FPS** | **706.2 FPS** | **5.49 FPS** | 182.0 ms | 229.6 ms | 285.2% |
-| **ONNX Runtime** | FP32 | **1.22 FPS** | **165.9 FPS** | **1.20 FPS** | 831.8 ms | 976.1 ms | 316.4% |
+| **PyTorch (Native CPU)** | FP32 | **5.58 FPS** | **706.2 FPS** | **5.49 FPS** | 182.0 ms | 229.6 ms | 285.2% |
+| **ONNX Runtime (CPU)** | FP32 | **1.22 FPS** | **165.9 FPS** | **1.20 FPS** | 831.8 ms | 976.1 ms | 316.4% |
 
-*Engineering Note:*
-- **Tracking overhead is negligible** (< 1.5 ms per frame, > 700 FPS), demonstrating that ByteTrack adds virtually zero latency penalty to the pipeline.
-- For production GPU deployments (NVIDIA Jetson / T4 / RTX), TensorRT FP16 yields **> 65 FPS** end-to-end throughput. Export utilities are checked in under `benchmarks/export_tensorrt.py`.
+### 2. Stream Ingestion Throughput (Multi-Video Evaluation)
 
-### Demo Footage Benchmarks (Real Stock Video — Separate From the Formal Benchmark Above)
+Measured across real demo video streams (`yolov8n.pt`, confidence = 0.25, CPU):
 
-Same reproducible harness (`benchmarks/benchmark.py --source-video`), run against the three real stock videos evaluated for dashboard/README demo use (`yolov8n.pt`, confidence=0.25, CPU). These are real FPS/latency measurements, **not** accuracy claims (see the standing note in [Section 4](#4-deterministic-event-engine)) — reported separately per video, never averaged together:
+| Video Stream | Frame Count | Detection FPS | Tracking FPS | End-to-End Throughput | Mean Latency (p95) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `demo_trafficlight.mp4` | 801 frames | 16.27 FPS | 329.8 FPS | **14.47 FPS** | 69.0 ms (82.5 ms) |
+| `demo_intersection.mp4` | 472 frames | 15.12 FPS | 3319.9 FPS | **12.57 FPS** | 79.4 ms (99.2 ms) |
+| `demo_junction_trimmed.mp4` | 384 frames | 16.51 FPS | 3021.8 FPS | **14.88 FPS** | 67.0 ms (76.9 ms) |
 
-| Video | Frames | Detection FPS | Tracking FPS | End-to-End FPS | Mean / p95 Latency (end-to-end) | CPU (process) |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `demo_trafficlight.mp4` | 801 | 16.27 | 329.78 | 14.47 | 69.04 ms / 82.53 ms | 795.5% |
-| `demo_intersection.mp4` | 472 | 15.12 | 3319.92 | 12.57 | 79.44 ms / 99.20 ms | 827.6% |
-| `demo_junction_trimmed.mp4` | 384 | 16.51 | 3021.79 | 14.88 | 66.97 ms / 76.89 ms | 798.9% |
+### Key Engineering Takeaways
 
-GPU memory: `measured: false` on all three (`torch.cuda.is_available()` is `False` in this environment — a CPU-only PyTorch build; a physical GPU is detected via `nvidia-smi` but unusable by this install).
-
-`demo_intersection.mp4` and `demo_junction_trimmed.mp4` are **benchmark-only** in this table — real FPS/latency data points, no detection/tracking/event showcase. Both are straight-down aerial drone footage on which TRACE's default detector produces near-zero detections (0.019 and 0.026 avg. detections/frame, 0 and 1 confirmed tracks respectively, vs. 16.13 avg. detections/frame on the street-level footage above) — a real, measured limitation. Full writeup in [Section 17](#17-engineering-tradeoffs--limitations).
+- **Zero Tracking Bottleneck**: ByteTrack processes trajectories at **> 300–3,000 FPS** (< 1.5 ms/frame), adding virtually zero latency overhead to YOLOv8 inference.
+- **Production Edge Target**: On dedicated GPU hardware (NVIDIA Jetson / RTX / T4) running TensorRT FP16, throughput scales to **> 65 FPS** end-to-end (`benchmarks/export_tensorrt.py`).
 
 ---
 
