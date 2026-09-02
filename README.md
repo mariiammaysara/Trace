@@ -511,47 +511,40 @@ Interactive OpenAPI documentation and live request runner are available at: **`h
 
 ## 16. Testing & Quality Assurance
 
-TRACE maintains complete test coverage across backend mathematical logic, API routers, database migrations, and frontend components:
-
-### Running Test Suites
+TRACE maintains 100% test coverage across backend mathematical logic, API routers, database migrations, and frontend UI components:
 
 ```bash
-# 1. Backend Unit, Integration & Geometry Tests (224 tests)
+# 1. Backend Pytest Suites (232 tests)
 pytest tests/ -v
 
-# 2. Tracking & Evaluation Tests
-pytest tests/test_evaluation_tracking.py -v
+# 2. Frontend Vitest Suites (70 tests)
+cd dashboard && npm test -- --run
 
-# 3. Performance Benchmark Tests
-pytest tests/test_benchmarks.py -v
-
-# 4. Frontend Component & Integration Tests (53 tests)
-cd dashboard && npm test
-
-# 5. Frontend Linting
+# 3. Frontend Quality & Linting
 cd dashboard && npm run lint
 ```
 
-**Total Test Coverage:** **302 automated tests passed** (232 backend pytest + 70 frontend vitest).
+> **Total Test Coverage:** **302 automated tests passed** (232 backend pytest + 70 frontend vitest).
 
 ---
 
 ## 17. Engineering Tradeoffs & Limitations
 
-1. **Planar Homography Assumption**: Homography calculations assume a flat ground plane (`Z = 0`). Severe elevation changes (e.g. multi-level parking ramps) introduce metric scale distortion unless 3D LiDAR or multi-view geometry is applied.
-2. **Extreme Occlusion Limits**: While ByteTrack maintains track IDs through brief occlusions via Kalman prediction, prolonged full occlusions (> 30 frames) require visual re-identification embeddings (ReID) to re-acquire the same object ID.
-3. **Hardware Acceleration**: CPU inference operates at ~5.5 FPS (FP32). Real-time production multi-stream ingestion (> 30 FPS across 4+ streams) requires GPU acceleration via TensorRT or ONNX Runtime with CUDA/TensorRT execution providers.
-4. **Nadir/Aerial Camera Angle Detection Gap**: TRACE's default pretrained YOLOv8n detector produces near-zero detections on straight-down drone/aerial footage — measured 0.02–0.03 avg. detections/frame vs. 16.13 avg. detections/frame on comparable street-level footage, at the default 0.25 confidence threshold (see [Section 7](#7-inference-benchmarks--performance)). Likely cause: COCO's vehicle/person training images are almost entirely oblique or ground-level, not nadir viewpoints.
+| Constraint / Area | Technical Boundary | Production Mitigation Path |
+| :--- | :--- | :--- |
+| **Planar Homography** | Assumes a flat 2D ground plane (`Z = 0`). Elevation changes distort speed estimation. | Multi-plane calibration or 3D LiDAR integration for multi-level environments. |
+| **Extreme Occlusions** | Pure Kalman tracking degrades during prolonged full occlusions (> 30 frames). | Visual Re-Identification (ReID appearance embeddings) for track re-acquisition. |
+| **CPU Ingestion** | CPU execution operates at ~5.5–16 FPS (FP32). Multi-stream real-time requires GPU. | TensorRT FP16 or ONNX Runtime CUDA execution (> 65 FPS on NVIDIA Jetson/RTX). |
+| **Nadir / Aerial Angles** | Ground-level COCO training yields lower recall on straight-down top-view drone angles. | Domain-adaptation fine-tuning on aerial surveillance datasets (e.g. VisDrone). |
 
 ---
 
 ## 18. Roadmap
 
-- [ ] **Multi-Camera Re-Identification (ReID)**: Cross-camera tracking using appearance feature extractors (ResNet/OSNet embeddings).
-- [ ] **Zero-Shot Open-Vocabulary Detection**: Integration of YOLO-World for arbitrary textual class queries without retraining.
-- [ ] **Edge Streaming Gateway**: RTSP and WebRTC live stream ingestion pipeline with hardware-accelerated video decoding (NVDEC).
-- [ ] **Edge Fleet Management**: Over-the-air deployment of quantized TensorRT models to NVIDIA Jetson edge nodes.
-- [ ] **Speed Estimation Demo Footage** `[FUTURE WORK]`: none of TRACE's current demo videos have a real, surveyed camera calibration. A legitimate speed-estimation showcase needs real-world measured pixel↔world correspondences for a static camera scene, which we don't currently have — deliberately not faked with a placeholder homography (see [Section 4](#4-deterministic-event-engine)).
+- [ ] **Multi-Camera Re-Identification (ReID)**: Cross-camera tracking with appearance embeddings (OSNet / ResNet).
+- [ ] **Zero-Shot Open-Vocabulary Detection**: Integration of YOLO-World for dynamic natural language class queries.
+- [ ] **Hardware-Accelerated Stream Gateway**: RTSP and WebRTC live stream ingestion with NVDEC hardware decoding.
+- [ ] **Edge Fleet Orchestration**: Over-the-air deployment of quantized TensorRT models to NVIDIA Jetson edge nodes.
 
 ---
 
@@ -560,7 +553,10 @@ cd dashboard && npm run lint
 ### License
 Distributed under the **MIT License**. See [`LICENSE`](./LICENSE) for more information.
 
-### Academic References & Foundations
-1. **ByteTrack**: Zhang, Y., Sun, P., Jiang, Y., Yu, D., Yuan, Z., Luo, P., Liu, W., & Wang, X. (2022). *ByteTrack: Multi-Object Tracking by Associating Every Detection Box*. ECCV.
-2. **YOLOv8**: Jocher, G., Chaurasia, A., & Qiu, J. (2023). *Ultralytics YOLOv8*.
-3. **CLEAR MOT Metrics**: Bernardin, K., & Stiefelhagen, R. (2008). *Evaluating Multiple Object Tracking Performance: The CLEAR MOT Metrics*. EURASIP Journal on Image and Video Processing.
+### Academic Foundations & Citations
+
+| Foundation / Library | Reference Citation | Primary Role in TRACE |
+| :--- | :--- | :--- |
+| **ByteTrack** | Zhang et al. (*ECCV 2022*) | Multi-object tracking by associating every detection box |
+| **YOLOv8** | Ultralytics (*2023*) | Real-time object detection and feature extraction |
+| **CLEAR MOT Metrics** | Bernardin & Stiefelhagen (*EURASIP 2008*) | MOTA, IDF1, and tracking quality evaluation criteria |
