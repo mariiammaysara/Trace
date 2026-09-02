@@ -205,22 +205,38 @@ Evaluated on static street-corner footage (26.7s / 801 frames, camera `demo-traf
 
 ## 5. Model Training & Domain Adaptation
 
-TRACE provides a structured two-stage fine-tuning pipeline tailored for surveillance and domain-shifted camera feeds:
+TRACE provides a structured two-stage fine-tuning pipeline tailored for surveillance domain adaptation:
 
-1. **Stage 1 (COCO Fine-Tuning)**:
-   - Base weights: `yolov8n.pt`
-   - Filtered COCO128 subset isolating the 6 core traffic classes.
-   - Objective: Optimize classification head alignment on targeted surveillance classes while freezing deep backbone layers.
-2. **Stage 2 (Domain Adaptation)**:
-   - Target camera footage frames annotated for specific surveillance angles, lighting conditions, and camera mount heights.
-   - Conservative learning rate (`1e-4`) with Mosaic and Albumentations augmentations (HSV jitter, perspective distortion, blur).
+<br>
 
-### Dataset Class Hierarchy
+### Two-Stage Training Pipeline
 
-| Class ID | Name | Target Category | Semantic Purpose |
+1. **Stage 1: Class-Narrowing Fine-Tuning**  
+   Isolates the 6 target urban mobility classes from COCO128 while freezing deep backbone layers to align the classification head.
+
+<br>
+
+2. **Stage 2: Scene Domain Adaptation**  
+   Fine-tunes the detection head on domain-specific camera frames under challenging surveillance mount angles, lighting shifts, and perspective compressions.
+
+<br>
+
+### Training Hyperparameters & Loss Formulation
+
+```
+[Loss Objective]      L_total = λ_box · L_box + λ_cls · L_cls + λ_dfl · L_dfl
+[Learning Rates]      η_stage1 = 1e-3 (initial)  →  η_stage2 = 1e-4 (conservative domain adaptation)
+[Augmentations]       Mosaic (p=1.0) + HSV Jitter (h=0.015, s=0.7, v=0.4) + Perspective Warp
+```
+
+<br>
+
+### Target Class Hierarchy
+
+| Class ID | Class Name | Category | Primary Surveillance Purpose |
 | :--- | :--- | :--- | :--- |
 | `0` | `person` | Pedestrian | Sidewalk occupancy, loitering, perimeter breaches |
-| `1` | `bicycle` | Micro-mobility | Dedicated lane monitoring, helmet compliance |
+| `1` | `bicycle` | Micro-mobility | Dedicated cycle lane monitoring, helmet compliance |
 | `2` | `car` | Light Vehicle | Speed compliance, parking zone violations |
 | `3` | `motorcycle`| Light Vehicle | Lane filtering, speed violations |
 | `4` | `bus` | Transit | Transit lane enforcement, dwell-time analytics |
