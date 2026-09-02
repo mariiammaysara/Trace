@@ -164,27 +164,27 @@ The Event Engine evaluates deterministic spatial and kinetic rules over trajecto
 
 <br>
 
-### Spatial & Kinetic Evaluation Rules
+### Core Spatio-Temporal Event Rules
 
 | Event Type | Trigger Logic | Mathematical Condition | Debounce State |
 | :--- | :--- | :--- | :--- |
-| `LINE_CROSSED` | Trajectory vector crosses a directional virtual tripwire | Vector Cross-Product & Direction | Immediate on verified crossing |
+| `LINE_CROSSED` | Trajectory vector crosses a directional virtual tripwire | Vector cross-product intersection | Immediate on line intersection |
 | `ZONE_ENTERED` | Object footprint enters a polygon boundary | Point-in-Polygon (`Shapely`) | Confirmed after *N* inside frames |
 | `ZONE_EXITED` | Object footprint leaves an occupied polygon | Point-in-Polygon (`Shapely`) | Confirmed after *N* outside frames |
-| `LOITERING` | Dwell duration within a designated zone | `Δt ≥ T_loiter` | Maintained until zone exit |
-| `OVERSPEED` | Calibrated ground-plane velocity exceeds threshold | `v > v_max` (km/h) | Moving-window velocity averaging |
-| `STOPPED` | Object remains stationary for a sustained duration | `v < v_stop` for `Δt ≥ T_stop` | Resets on sustained movement |
-| `SUDDEN_STOP` | Negative acceleration exceeds emergency threshold | `a = Δv / Δt ≤ -a_max` | Verified across frame intervals |
+| `LOITERING` | Dwell duration within a designated zone | Accumulated dwell: `t ≥ T_limit` | Maintained until zone exit |
+| `OVERSPEED` | Calibrated ground velocity exceeds threshold | Ground metric speed: `v > v_limit` | Moving-window velocity filter |
+| `STOPPED` | Object remains stationary for a sustained duration | Velocity `v ≈ 0` for `t ≥ T_stop` | Resets on sustained movement |
+| `SUDDEN_STOP` | Negative acceleration exceeds emergency threshold | High deceleration: `a ≤ -a_max` | Verified across frame intervals |
 
 <br>
 
 ### Core Formulas & Thresholds
 
-```
-[Speed Estimation]      v = || p(t) - p(t-Δt) || / Δt          (via 3×3 metric homography)
-[Deceleration]          a = (v(t) - v(t-Δt)) / Δt             (anomaly trigger when a ≤ -a_max)
-[Loitering Dwell]       T_dwell = t_current - t_entry          (trigger when T_dwell ≥ T_loiter)
-[Line Intersection]     (p1 × p2) · (q1 × q2) < 0              (bidirectional crossing detection)
+```text
+Speed (v):         v = || p(t) - p(t - dt) || / dt       [via 3×3 metric homography]
+Deceleration (a):  a = (v(t) - v(t - dt)) / dt           [trigger when a ≤ -a_max]
+Loitering (T):     T_dwell = t_current - t_entry         [trigger when T_dwell ≥ T_limit]
+Tripwire Crossing: (p1 × p2) · (q1 × q2) < 0             [vector ray intersection]
 ```
 
 <br>
@@ -223,10 +223,10 @@ TRACE provides a structured two-stage fine-tuning pipeline tailored for surveill
 
 ### Training Hyperparameters & Loss Formulation
 
-```
-[Loss Objective]      L_total = λ_box · L_box + λ_cls · L_cls + λ_dfl · L_dfl
-[Learning Rates]      η_stage1 = 1e-3 (initial)  →  η_stage2 = 1e-4 (conservative domain adaptation)
-[Augmentations]       Mosaic (p=1.0) + HSV Jitter (h=0.015, s=0.7, v=0.4) + Perspective Warp
+```text
+Loss Objective:    L_total = λ_box · L_box + λ_cls · L_cls + λ_dfl · L_dfl
+Learning Rates:    η_stage1 = 1e-3 (initial) → η_stage2 = 1e-4 (domain adaptation)
+Augmentations:     Mosaic (p=1.0) + HSV Jitter + Perspective Distortion
 ```
 
 <br>
