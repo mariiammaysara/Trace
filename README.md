@@ -551,12 +551,43 @@ cd dashboard && npm run lint
 ## 19. License & References
 
 ### License
-Distributed under the **MIT License**. See [`LICENSE`](./LICENSE) for more information.
 
-### Academic Foundations & Citations
+This project is open-sourced under the **MIT License** — see the [`LICENSE`](./LICENSE) file for full details.
 
-| Foundation / Library | Reference Citation | Primary Role in TRACE |
-| :--- | :--- | :--- |
-| **ByteTrack** | Zhang et al. (*ECCV 2022*) | Multi-object tracking by associating every detection box |
-| **YOLOv8** | Ultralytics (*2023*) | Real-time object detection and feature extraction |
-| **CLEAR MOT Metrics** | Bernardin & Stiefelhagen (*EURASIP 2008*) | MOTA, IDF1, and tracking quality evaluation criteria |
+### Academic References & Citations
+
+If you use or reference TRACE in your research or applications, please cite the underlying academic foundations:
+
+```bibtex
+@inproceedings{zhang2022bytetrack,
+  title     = {ByteTrack: Multi-Object Tracking by Associating Every Detection Box},
+  author    = {Zhang, Yifu and Sun, Peize and Jiang, Yi and Yu, Dongdong and Weng, Fucheng and Yuan, Zehuan and Luo, Ping and Liu, Wenyu and Wang, Xinggang},
+  booktitle = {European Conference on Computer Vision (ECCV)},
+  year      = {2022}
+}
+
+@software{jocher2023yolov8,
+  title     = {Ultralytics YOLOv8},
+  author    = {Jocher, Glenn and Chaurasia, Ayush and Qiu, Jing},
+  year      = {2023},
+  url       = {https://github.com/ultralytics/ultralytics}
+}
+
+@article{bernardin2008evaluating,
+  title     = {Evaluating Multiple Object Tracking Performance: The CLEAR MOT Metrics},
+  author    = {Bernardin, Keni and Stiefelhagen, Rainer},
+  journal   = {EURASIP Journal on Image and Video Processing},
+  volume    = {2008},
+  pages     = {1--10},
+  year      = {2008},
+  publisher = {Springer}
+}
+```
+
+<br>
+
+| Citation Key | Domain | Key Architecture / Theory | Publication Link |
+| :--- | :--- | :--- | :---: |
+| `zhang2022bytetrack` | Multi-Object Tracking | Low-score detection recovery & Kalman state matching | [arXiv:2110.06864](https://arxiv.org/abs/2110.06864) |
+| `jocher2023yolov8` | Object Detection | Decoupled anchor-free head & Mosaic augmentation pipeline | [GitHub](https://github.com/ultralytics/ultralytics) |
+| `bernardin2008evaluating` | Benchmark Standards | Mathematical definitions for MOTA, MOTP, and ID Switches | [Springer EURASIP](https://link.springer.com/article/10.1155/2008/246309) |
