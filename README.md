@@ -15,15 +15,6 @@
   Edge Computer Vision (YOLOv8 + ByteTrack) • Metric Planar Homography • Spatio-Temporal Event Engine • Tool-Using LLM Vision Agent
 </p>
 
-<p align="center">
-  <a href="#1-project-overview">Overview</a> •
-  <a href="#2-system-architecture">Architecture</a> •
-  <a href="#3-key-features">Key Features</a> •
-  <a href="#8-dashboard--user-interface">Dashboard</a> •
-  <a href="#6-formal-evaluation--accuracy">Evaluation</a> •
-  <a href="#12-quick-start-docker-compose">Quick Start</a>
-</p>
-
 <br>
 
 <img src="docs/demo_hero.gif" alt="TRACE Live Detection & Tracking Demo" width="760" />
