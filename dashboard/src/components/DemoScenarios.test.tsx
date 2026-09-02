@@ -19,7 +19,7 @@ describe('Phase 20: Demo Scenarios Modal', () => {
     expect(screen.getByText('Restricted Area Perimeter Intrusion')).toBeInTheDocument()
     expect(screen.getByText('Perimeter Tripwire Line Crossing')).toBeInTheDocument()
     expect(screen.getByText('Object Localization & Persistent Tracking')).toBeInTheDocument()
-    expect(screen.getByText('Street Intersection Vehicle Line Crossing')).toBeInTheDocument()
+    expect(screen.getByText('Street Corner Vehicle Line Crossing')).toBeInTheDocument()
     expect(screen.getByText(/Footprint transparency/i)).toBeInTheDocument()
   })
 

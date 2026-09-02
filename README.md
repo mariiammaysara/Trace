@@ -89,7 +89,7 @@ flowchart LR
     subgraph CLIENT["3. User Interfaces"]
         direction TB
         API <--> DASH["React 19 Operator Dashboard<br/>(Vector Overlays & HUD)"]
-        API <--> AGENT["Claude 3.5 Vision Agent<br/>(Tool-Grounded Investigation)"]
+        API <--> AGENT["claude-sonnet-4-5 Agent<br/>(Tool-Grounded Investigation)"]
     end
 ```
 
@@ -113,7 +113,7 @@ flowchart LR
 <br>
 
 4. **Operator Interface & AI Agent (`dashboard/` & `src/agent/`)**  
-   Provides a responsive React 19 dashboard with synchronized SVG vector overlays and sub-second click-to-seek, alongside a tool-using Claude 3.5 Vision Agent for natural language investigation with safety-gated action approvals.
+   Provides a responsive React 19 dashboard with synchronized SVG vector overlays and sub-second click-to-seek, alongside a tool-using claude-sonnet-4-5 Vision Agent for natural language investigation with safety-gated action approvals.
 
 ---
 
@@ -265,9 +265,7 @@ $$
 | **YOLOv8n Pretrained** | `bicycle` | 0.521 | 1.000 | **0.995** | **0.895** |
 | **Stage 2 Adapted** | `person` (Surveillance) | **0.003** | **1.000** | **0.995** | **0.697** |
 
-<br>
-
-> **Evaluation Insight:** Stage 2 achieves high recall on target surveillance angles while fine-tuning reveals domain sensitivity, highlighting the value of pairing robust pretrained weights with spatial event rules.
+*Stage 2's precision never recovered from Stage 1's collapse (both 0.003 — a ~99.7% false-positive rate on real footage); only mAP50-95 improved (0.309 → 0.697) on this one memorized real clip. This does not demonstrate generalization — see Section 5 for the domain-adaptation analysis.*
 
 <br>
 
@@ -280,8 +278,9 @@ Evaluated across 244 continuous video frames under challenging camera angles:
 | **Real Surveillance Video (244 frames)** | **1.000** | **1.000** | **0** | **0** | **0** | **244** |
 | **Synthetic Crossing (Occlusion Stress Test)** | **1.000** | **1.000** | **0** | **0** | **0** | **40** |
 
-- **Real Video Footage:** Pretrained YOLOv8n + ByteTrack maintains continuous single-object tracking across 244 frames with zero identity switches.
-- **Synthetic Crossing:** Validates Kalman prediction during complete trajectory intersection and cross-object occlusion without detector noise.
+**These 1.000 scores are not general tracking performance — each came from one narrow, specific test, not a general benchmark:**
+- *Real Surveillance Video* row: only the **pretrained** YOLOv8n+ByteTrack combination, tracking **one** continuously-visible person across a single near-static 244-frame clip (`data/sample.mp4`) — a scene with no occlusions, no crossings, and nothing for a track id to switch with. Run through the exact same real-footage pipeline, the domain-adapted **Stage 1 and Stage 2** checkpoints produced a complete tracking failure: **MOTA = IDF1 = 0.000, 0/244 matches, 244/244 misses** — a direct consequence of their collapsed detection precision (0.003, see table above). Raw data available in `evaluation/results/tracking_comparison.json`.
+- *Synthetic Crossing* row: a controlled 2-object test where **ground-truth boxes were fed directly into ByteTrack** (no detector in the loop), isolating the tracker's motion-prediction behavior at one specific crossing point. It does not test detection accuracy and does not generalize to harder real-world conditions (occlusion, more objects, non-constant velocity).
 
 ---
 
@@ -332,14 +331,14 @@ The operator dashboard is built with **React 19**, **Vite**, and **Tailwind CSS 
 
 - **Synchronized SVG Overlays**: Telemetry projected dynamically over `<video>` elements via `requestAnimationFrame` without altering source video.
 - **Sub-Second Incident Seek**: Click any event card to immediately seek the video player to that exact millisecond.
-- **Interactive Demo Scenarios**: 4 pre-recorded real-footage scenarios (Perimeter Intrusion, Tripwire Crossing, Object Lifecycle, Street Intersection).
+- **Interactive Demo Scenarios**: 4 pre-recorded real-footage scenarios (Perimeter Intrusion, Tripwire Crossing, Object Lifecycle, Street Corner Vehicle Line Crossing).
 - **100% Data Integrity**: All telemetry cards, graphs, and trajectory inspectors query live PostgreSQL/FastAPI records without mock placeholders.
 
 ---
 
 ## 9. Vision Intelligence Agent (LLM)
 
-TRACE embeds an investigation agent powered by **Claude 3.5 Sonnet** with strict database grounding and a human-in-the-loop safety gate:
+TRACE embeds an investigation agent powered by **claude-sonnet-4-5** with strict database grounding and a human-in-the-loop safety gate:
 
 ### Agent Tool Interface
 
@@ -364,7 +363,7 @@ TRACE embeds an investigation agent powered by **Claude 3.5 Sonnet** with strict
 | **Inference Backends**| `PyTorch 2.0+`, `ONNX Runtime`, `TensorRT` | CPU/GPU execution engines and model quantization |
 | **Backend & API** | `Python 3.10+`, `FastAPI`, `Pydantic v2` | High-throughput asynchronous REST API and schema validation |
 | **Database** | `PostgreSQL 16`, `SQLAlchemy 2.0` | Relational storage for tracks, telemetry points, and incident logs |
-| **AI Intelligence** | `Anthropic Claude 3.5 Sonnet` | Natural language forensic investigation and tool-grounded queries |
+| **AI Intelligence** | `Anthropic claude-sonnet-4-5` | Natural language forensic investigation and tool-grounded queries |
 | **Operator Frontend** | `React 19`, `TypeScript`, `Vite`, `Tailwind CSS v4` | High-performance dashboard, SVG vector HUD, and demo scenarios |
 | **DevOps & QA** | `Docker Compose`, `Pytest`, `Vitest`, `Oxlint` | Container orchestration, 302 automated unit/integration tests |
 
@@ -456,7 +455,7 @@ python scripts/persist_video.py data/sample.mp4 --camera-id demo
 | `TRACE_CAMERA_ID` | `demo` | Active camera calibration config ID |
 | `TRACE_DETECTOR_WEIGHTS` | `yolov8n.pt` | Model checkpoint path or identifier |
 | `TRACE_DETECTOR_CONFIDENCE` | `0.25` | Minimum object detection confidence |
-| `ANTHROPIC_API_KEY` | *(optional)* | API key for Claude 3.5 Vision Agent |
+| `ANTHROPIC_API_KEY` | *(optional)* | API key for claude-sonnet-4-5 Vision Agent |
 | `VITE_API_BASE_URL` | `http://localhost:8000` | Backend API URL consumed by React dashboard |
 
 ---

@@ -82,7 +82,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
   },
   {
     id: 'trafficlight-line-crossing',
-    title: 'Street Intersection Vehicle Line Crossing',
+    title: 'Street Corner Vehicle Line Crossing',
     category: 'Access Control',
     description:
       'Real stock footage of a static street-corner traffic light. A tracked vehicle (object_id=2) crosses a calibrated tripwire line placed across the crosswalk, triggering a real LINE_CROSSED event -- verified by actually running the pipeline, not assumed.',
