@@ -339,46 +339,34 @@ The operator dashboard is built with **React 19**, **Vite**, and **Tailwind CSS 
 
 ## 9. Vision Intelligence Agent (LLM)
 
-TRACE includes a tool-using AI Agent powered by **Anthropic Claude 3.5 Sonnet**. The agent interacts with live and historical surveillance data via a clean database tool layer.
+TRACE embeds an investigation agent powered by **Claude 3.5 Sonnet** with strict database grounding and a human-in-the-loop safety gate:
 
-### Agent Read Tools
-- `get_camera_list()`: Discover all configured camera sensors.
-- `query_analytics(camera_id, start_time, end_time)`: Retrieve aggregated dwell times, traffic volume, and event frequency.
-- `search_events(camera_id, event_type, start_time, end_time)`: Fetch specific violations.
-- `get_object_trajectory(object_id)`: Retrieve raw coordinates and speed measurements for a tracked entity.
+### Agent Tool Interface
 
-### Safety & Action Proposal Gate
-The agent cannot unilaterally execute state-modifying actions. High-impact operations (e.g., dispatching alert webhooks, reconfiguring zone tripwires) follow a **Propose → Review → Execute** pattern with explicit human approval tokens.
+| Tool Name | Operation Type | Capability |
+| :--- | :--- | :--- |
+| `get_camera_list` | Read | Enumerates configured camera sensors and topology |
+| `query_analytics` | Read | Aggregates dwell durations, traffic density, and event frequency |
+| `search_events` | Read | Queries structured spatial violations with time-range filters |
+| `get_object_trajectory` | Read | Retrieves raw coordinate history, speeds, and bounding boxes |
+| `propose_action` | Write (Gated) | Generates pending alert or geometry mutations requiring operator review |
+
+> **Safety Gate:** The agent operates under a **Propose $\rightarrow$ Review $\rightarrow$ Execute** model. High-impact operations (e.g. dispatching webhooks or updating zones) require explicit operator confirmation tokens.
 
 ---
 
 ## 10. Tech Stack
 
-### Core ML & Computer Vision
-- **Ultralytics YOLOv8**: Real-time object detection.
-- **OpenCV (cv2)**: Video ingestion, letterboxing, frame manipulation.
-- **NumPy & SciPy**: Trajectory interpolation, Kalman filter math, linear assignment.
-- **Shapely**: Geometric polygon intersections and point-in-polygon tests.
-- **ONNX Runtime & TensorRT**: Optimized cross-platform inference backends.
-
-### Backend & Data Persistence
-- **Python 3.10+**: Core backend runtime.
-- **FastAPI**: Asynchronous high-performance REST API.
-- **SQLAlchemy 2.0**: Relational ORM supporting PostgreSQL 16.
-- **Anthropic Python SDK**: LLM tool calling and multimodal agent integration.
-- **Pydantic v2**: Strict schema validation and data serialization.
-
-### Frontend
-- **React 19 & TypeScript**: Component architecture and type safety.
-- **Vite**: Modern build tooling and HMR dev server.
-- **Tailwind CSS v4 & Base UI / shadcn**: Utility-first design tokens and accessible primitives.
-- **Lucide Icons**: Technical iconography.
-
-### DevOps & QA
-- **Docker & Docker Compose**: Multi-container service orchestration.
-- **Pytest**: Backend unit, integration, and regression testing.
-- **Vitest & React Testing Library**: Frontend component and hook test suite.
-- **Oxlint**: High-speed JavaScript/TypeScript linting.
+| Layer | Core Technologies | Primary Role in TRACE |
+| :--- | :--- | :--- |
+| **Computer Vision** | `Ultralytics YOLOv8`, `ByteTrack`, `OpenCV` | Real-time object detection, Kalman tracking, and frame ingestion |
+| **Spatial Geometry** | `NumPy`, `SciPy`, `Shapely` | 3×3 metric planar homography, trajectory smoothing, polygon tests |
+| **Inference Backends**| `PyTorch 2.0+`, `ONNX Runtime`, `TensorRT` | CPU/GPU execution engines and model quantization |
+| **Backend & API** | `Python 3.10+`, `FastAPI`, `Pydantic v2` | High-throughput asynchronous REST API and schema validation |
+| **Database** | `PostgreSQL 16`, `SQLAlchemy 2.0` | Relational storage for tracks, telemetry points, and incident logs |
+| **AI Intelligence** | `Anthropic Claude 3.5 Sonnet` | Natural language forensic investigation and tool-grounded queries |
+| **Operator Frontend** | `React 19`, `TypeScript`, `Vite`, `Tailwind CSS v4` | High-performance dashboard, SVG vector HUD, and demo scenarios |
+| **DevOps & QA** | `Docker Compose`, `Pytest`, `Vitest`, `Oxlint` | Container orchestration, 302 automated unit/integration tests |
 
 ---
 
