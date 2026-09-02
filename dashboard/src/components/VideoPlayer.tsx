@@ -14,7 +14,14 @@ import {
   Minimize2,
   Layers,
   VideoOff,
+  Rewind,
+  FastForward,
 } from 'lucide-react'
+
+/** Investigation's "scrub ±5s around the event" control (Phase 18) --
+ * reused here, not duplicated, since every page (Overview, Live, Events,
+ * Investigation) shares this one VideoPlayer. */
+const SCRUB_SECONDS = 5
 
 /** Mirrors HTMLMediaElement.error.code -- see MDN MediaError. */
 const MEDIA_ERROR_MESSAGES: Record<number, string> = {
@@ -111,6 +118,15 @@ export function VideoPlayer({
     if (!element) return
     element.currentTime = 0
     setCurrentTime(0)
+  }
+
+  function nudge(deltaSeconds: number) {
+    const element = videoRef.current
+    if (!element) return
+    const ceiling = duration || element.duration || Infinity
+    const target = Math.min(Math.max(element.currentTime + deltaSeconds, 0), ceiling)
+    element.currentTime = target
+    setCurrentTime(target)
   }
 
   function toggleContainerFullscreen() {
@@ -257,6 +273,35 @@ export function VideoPlayer({
         >
           {isMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
         </Button>
+
+        {/* Scrub ±5s -- lets investigating an incident jump to and frame the
+            exact moment, without hunting on the slider for a precise offset. */}
+        <div className="flex items-center gap-0.5 border-l border-border pl-3 -ml-0.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            onClick={() => nudge(-SCRUB_SECONDS)}
+            disabled={!!mediaError}
+            aria-label={`Back ${SCRUB_SECONDS} seconds`}
+            title={`Back ${SCRUB_SECONDS}s`}
+            className="text-ink-subtle hover:text-ink"
+          >
+            <Rewind className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            onClick={() => nudge(SCRUB_SECONDS)}
+            disabled={!!mediaError}
+            aria-label={`Forward ${SCRUB_SECONDS} seconds`}
+            title={`Forward ${SCRUB_SECONDS}s`}
+            className="text-ink-subtle hover:text-ink"
+          >
+            <FastForward className="h-3.5 w-3.5" />
+          </Button>
+        </div>
 
         {/* Scrubber Slider */}
         <Slider
