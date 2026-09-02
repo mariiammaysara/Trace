@@ -1,7 +1,7 @@
 """TRACE's FastAPI app: POST /videos, POST /cameras, GET /cameras/{camera_id}/events,
 GET /objects/{id}/trajectory, GET /analytics, POST /zones, POST /lines,
 POST /agent/query, POST /alerts, GET /cameras/{camera_id}/alerts,
-POST /agent/actions/{id}/approve, GET /agent/actions/{id}.
+POST /agent/actions/{id}/approve, GET /agent/actions/{id}, GET /evaluation.
 
 Error handling:
 - 422 for a malformed request body -- Pydantic validation, automatic, before
@@ -24,7 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routers import agent, alerts, analytics, cameras, lines, objects, videos, zones
+from api.routers import agent, alerts, analytics, cameras, evaluation, lines, objects, videos, zones
 from logging_config import configure_logging
 
 configure_logging()
@@ -66,6 +66,7 @@ app.include_router(objects.router)
 app.include_router(analytics.router)
 app.include_router(agent.router)
 app.include_router(alerts.router)
+app.include_router(evaluation.router)
 
 
 @app.exception_handler(Exception)

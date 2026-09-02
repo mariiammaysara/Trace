@@ -196,8 +196,9 @@ export interface AlertRecord {
  * GET /cameras/{camera_id}/alerts -- Section 13's dashboard/API delivery
  * channel: an alert is "delivered" by existing here, queryable. These are
  * real Alert rows created automatically (src/database/repository.py's
- * should_alert) when a qualifying event -- OVERSPEED, ZONE_ENTERED,
- * SUDDEN_STOP, LINE_CROSSED -- is ingested for this camera.
+ * should_alert) when a qualifying event is ingested for this camera --
+ * currently just OVERSPEED (src/alerts/rules.py's ALERT_TRIGGERING_EVENT_TYPES;
+ * ZONE_ENTERED/SUDDEN_STOP/LINE_CROSSED are not wired to alerting yet).
  */
 export function listCameraAlerts(cameraId: string): Promise<AlertRecord[]> {
   return apiGet<AlertRecord[]>(`/cameras/${encodeURIComponent(cameraId)}/alerts`)
@@ -224,4 +225,65 @@ export interface AgentAnswer {
  */
 export function queryAgent(question: string): Promise<AgentAnswer> {
   return apiPost<AgentAnswer>('/agent/query', { question })
+}
+
+/**
+ * GET /evaluation -- Phase 17's Model Evaluation view. Types below mirror
+ * the real, checked-in Phase 14 evaluation-harness output
+ * (evaluation/results/detection_comparison.json,
+ * evaluation/results/tracking_comparison.json) field-for-field; the backend
+ * route is a near-verbatim passthrough of those files (see
+ * src/api/routers/evaluation.py), so there is exactly one place these
+ * numbers are ever written down -- not duplicated here.
+ */
+export interface DetectionClassMetric {
+  Class: string
+  Images: number
+  Instances: number
+  'Box-P': number
+  'Box-R': number
+  'Box-F1': number
+  mAP50: number
+  'mAP50-95': number
+  model: string
+}
+
+export interface DetectionHoldout {
+  weights: Record<string, string>
+  per_class: Record<string, Record<string, DetectionClassMetric>>
+}
+
+export interface DetectionComparison {
+  coco_holdout: DetectionHoldout
+  real_footage_holdout: DetectionHoldout
+}
+
+export interface TrackingResult {
+  mota: number
+  idf1: number
+  num_switches: number
+  num_false_positives: number
+  num_misses: number
+  num_matches: number
+}
+
+export interface TrackingComparison {
+  real_footage: {
+    ground_truth_frames: number
+    weights: Record<string, string>
+    results: Record<string, TrackingResult>
+  }
+  synthetic_crossing: {
+    ground_truth_frames: number
+    results: TrackingResult
+  }
+}
+
+export interface EvaluationData {
+  detection: DetectionComparison
+  tracking: TrackingComparison
+}
+
+export function getEvaluation(): Promise<EvaluationData> {
+  return apiGet<EvaluationData>('/evaluation')
 }

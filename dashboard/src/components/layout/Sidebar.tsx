@@ -7,10 +7,11 @@ import {
   ShieldAlert,
   Bot,
   MonitorPlay,
+  FlaskConical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type ActiveView = 'dashboard' | 'live' | 'cameras' | 'events' | 'analytics' | 'investigations' | 'alerts' | 'agent'
+export type ActiveView = 'dashboard' | 'live' | 'cameras' | 'events' | 'analytics' | 'investigations' | 'alerts' | 'agent' | 'evaluation'
 
 interface NavItem {
   id: ActiveView
@@ -28,6 +29,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'investigations', label: 'Investigation', icon: Search },
   { id: 'alerts', label: 'Alerts', icon: ShieldAlert },
   { id: 'agent', label: 'Vision Agent', icon: Bot, badge: 'AI' },
+  { id: 'evaluation', label: 'Evaluation', icon: FlaskConical },
 ]
 
 interface SidebarProps {

@@ -470,6 +470,56 @@ def test_get_agent_action_unknown_id_returns_404(client):
     assert response.status_code == 404
 
 
+# --- GET /evaluation ---
+
+
+def test_get_evaluation_matches_the_checked_in_evaluation_files_exactly(client):
+    """The endpoint must be a real passthrough of Phase 14's evaluation-harness
+    output, not a hand-maintained copy that could silently drift from it."""
+    import json
+
+    from api.routers.evaluation import DETECTION_RESULTS_PATH, TRACKING_RESULTS_PATH
+
+    response = client.get("/evaluation")
+    assert response.status_code == 200
+    body = response.json()
+
+    with DETECTION_RESULTS_PATH.open(encoding="utf-8") as f:
+        assert body["detection"] == json.load(f)
+    with TRACKING_RESULTS_PATH.open(encoding="utf-8") as f:
+        assert body["tracking"] == json.load(f)
+
+
+def test_get_evaluation_includes_the_real_stage1_collapse_not_filtered_out(client):
+    """Stage 1's real result is a collapse on 5/6 COCO classes and a flat
+    0.0 MOTA/IDF1 on real footage -- this endpoint must return those exact
+    zero/near-zero values, not silently omit or clamp them."""
+    response = client.get("/evaluation")
+    body = response.json()
+
+    car_stage1 = body["detection"]["coco_holdout"]["per_class"]["car"]["stage1"]
+    assert car_stage1["mAP50"] == 0.0
+    assert car_stage1["Box-P"] == 0.0
+
+    tracking_stage1 = body["tracking"]["real_footage"]["results"]["stage1"]
+    assert tracking_stage1["mota"] == 0.0
+    assert tracking_stage1["idf1"] == 0.0
+    assert tracking_stage1["num_misses"] == 244.0
+
+    tracking_pretrained = body["tracking"]["real_footage"]["results"]["pretrained"]
+    assert tracking_pretrained["mota"] == 1.0
+
+
+def test_get_evaluation_returns_503_with_reason_when_results_file_missing(client, monkeypatch, tmp_path):
+    from api.routers import evaluation
+
+    monkeypatch.setattr(evaluation, "DETECTION_RESULTS_PATH", tmp_path / "does_not_exist.json")
+
+    response = client.get("/evaluation")
+    assert response.status_code == 503
+    assert "evaluation" in response.json()["detail"].lower()
+
+
 # --- 500 handling ---
 
 

@@ -8,6 +8,7 @@ import { EventsView } from '@/components/EventsView'
 import { AnalyticsView } from '@/components/AnalyticsView'
 import { AlertsView } from '@/components/AlertsView'
 import { VisionAgentView } from '@/components/VisionAgentView'
+import { EvaluationView } from '@/components/EvaluationView'
 import { listCameras, type Camera } from '@/lib/api'
 
 const VIEW_METADATA: Record<ActiveView, { title: string; subtitle: string }> = {
@@ -42,6 +43,10 @@ const VIEW_METADATA: Record<ActiveView, { title: string; subtitle: string }> = {
   agent: {
     title: 'Vision Agent',
     subtitle: 'Ask questions grounded in real TRACE tracking data',
+  },
+  evaluation: {
+    title: 'Evaluation',
+    subtitle: 'Real fine-tuning results: baseline vs. Stage 1 vs. Stage 2',
   },
 }
 
@@ -175,6 +180,8 @@ function App() {
           {activeView === 'alerts' && <AlertsView cameras={cameras} />}
 
           {activeView === 'agent' && <VisionAgentView />}
+
+          {activeView === 'evaluation' && <EvaluationView />}
         </main>
       </div>
     </div>
