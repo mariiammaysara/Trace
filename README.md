@@ -1,27 +1,36 @@
 <div align="center">
 
-#  TRACE
+# TRACE
 ### Real-Time Video Intelligence & Multi-Object Tracking Platform
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-19.0-61DAFB.svg?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/Tests-277%20Passed-success.svg?style=for-the-badge)]()
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React 19](https://img.shields.io/badge/React-19.0-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Tests](https://img.shields.io/badge/Tests-302%20Passed-2e7d5b?style=flat-square)](https://github.com/mariiammaysara/Trace)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](https://opensource.org/licenses/MIT)
 
 <p align="center">
   <b>Transforming unstructured surveillance and video feeds into queryable, real-time spatial intelligence.</b><br>
   Edge Computer Vision (YOLOv8 + ByteTrack) • Metric Planar Homography • Spatio-Temporal Event Engine • Tool-Using LLM Vision Agent
 </p>
 
-</div>
+<p align="center">
+  <a href="#1-project-overview">Overview</a> •
+  <a href="#2-system-architecture">Architecture</a> •
+  <a href="#3-key-features">Key Features</a> •
+  <a href="#8-dashboard--user-interface">Dashboard</a> •
+  <a href="#6-formal-evaluation--accuracy">Evaluation</a> •
+  <a href="#12-quick-start-docker-compose">Quick Start</a>
+</p>
 
-<div align="center">
+<br>
 
-![TRACE detection and tracking demo](docs/demo_hero.gif)
+<img src="docs/demo_hero.gif" alt="TRACE Live Detection & Tracking Demo" width="760" />
 
-*Real detection + tracking output from TRACE's default pipeline (YOLOv8n + ByteTrack) on real street-corner stock footage — live bounding boxes with persistent track IDs, no staged or hand-annotated data. The tracked vehicle in the center (`id=2`) is the same real object that triggers TRACE's one verified `LINE_CROSSED` event at t=9.5s — see [Key Features](#3-key-features) below.*
+<p align="center">
+  <sub><b>Live Multi-Object Tracking & Event Engine Demo</b> — Real-time YOLOv8 + ByteTrack inference with metric planar homography and spatial line crossing (verified <code>LINE_CROSSED</code> event at t=9.5s on object <code>#2</code>).</sub>
+</p>
 
 </div>
 
