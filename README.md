@@ -374,51 +374,16 @@ TRACE embeds an investigation agent powered by **Claude 3.5 Sonnet** with strict
 
 ```text
 Trace/
-├── src/                          # Core Python Library
-│   ├── detection/                # YOLOv8 Detector & NMS wrappers
-│   ├── tracking/                 # ByteTrack implementation & Kalman filters
-│   ├── trajectories/             # Trajectory smoothing & kinetic calculations
-│   ├── geometry/                 # Homography calibration & spatial primitives
-│   ├── events/                   # Spatio-temporal event engine & rule definitions
-│   ├── analytics/                # SQL aggregation & traffic analytics queries
-│   ├── database/                 # SQLAlchemy models, session management, migrations
-│   ├── api/                      # FastAPI application routes & schemas
-│   │   └── routers/              # Modular API endpoints (cameras, events, agent, etc.)
-│   ├── agent/                    # Anthropic Claude tool-calling vision agent
-│   └── alerts/                   # Webhook dispatchers & retry handlers
-├── dashboard/                    # React 19 + TypeScript + Vite Frontend
-│   ├── src/
-│   │   ├── components/           # UI components (VideoPlayer, RecentEvents, StatCard)
-│   │   │   ├── layout/           # Sidebar, Header, Shell
-│   │   │   ├── ui/               # Base UI & shadcn design components
-│   │   │   └── charts/           # Pure CSS animated BarCharts
-│   │   ├── hooks/                # Custom React hooks (useCameraScene)
-│   │   └── lib/                  # API client, severity classification, overlays
-│   └── theme/                    # Design tokens & color system (tokens.css)
-├── scripts/                      # Runnable CLIs
-│   ├── detect_video.py           # Offline detection visualizer
-│   ├── track_video.py            # Offline tracking visualizer
-│   ├── event_video.py            # Event engine visualizer
-│   └── persist_video.py          # Real-time pipeline to PostgreSQL worker
-├── training/                     # Detector Fine-Tuning Pipeline
-│   ├── prepare_dataset.py        # COCO subset extraction & annotation builder
-│   ├── train.py                  # Two-stage training entrypoint
-│   ├── stage1/                   # COCO fine-tuning configs
-│   └── stage2/                   # Domain adaptation configs
-├── evaluation/                   # Evaluation & Benchmark Harness
-│   ├── detection/                # Precision, Recall, mAP evaluation
-│   ├── tracking/                 # MOTA, IDF1, CLEAR MOT metrics
-│   └── results/                  # Checked-in empirical evaluation logs
-├── benchmarks/                   # Performance Engineering
-│   ├── benchmark.py              # Latency & throughput benchmarker
-│   ├── export_onnx.py            # PyTorch to ONNX export tool
-│   ├── export_tensorrt.py        # ONNX to TensorRT engine builder
-│   └── results/                  # Checked-in latency & memory benchmarks
-├── configs/cameras/              # Per-camera homography & zone JSON configurations
-├── tests/                        # 224+ Python Pytest test suites
-├── docker-compose.yml            # Multi-service container specification
-├── Dockerfile                    # Multi-stage Python backend container image
-└── README.md                     # Project documentation
+├── src/                  # Core Python engine (detection, tracking, event engine, API, agent)
+├── dashboard/            # React 19 operator dashboard (HUD telemetry, vector overlays, demo)
+├── configs/              # Per-camera homography calibrations, polygons, and virtual tripwires
+├── scripts/              # Video processing, offline visualizers, and PostgreSQL batch sync
+├── training/             # Two-stage YOLOv8 fine-tuning & domain adaptation pipeline
+├── evaluation/           # Formal CLEAR MOT tracking & mAP detection evaluation harness
+├── benchmarks/           # Latency benchmarker, ONNX Runtime & TensorRT FP16 export utilities
+├── tests/                # 302 automated backend pytest & frontend vitest test suites
+├── docker-compose.yml    # Full-stack container orchestration (Postgres 16, API, Dashboard)
+└── Dockerfile            # Multi-stage Python backend container image
 ```
 
 ---
