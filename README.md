@@ -390,65 +390,56 @@ Trace/
 
 ## 12. Quick Start (Docker Compose)
 
-Launch the complete stack (PostgreSQL + FastAPI + Ingest Worker + React Dashboard) with a single command:
+Launch the complete stack (PostgreSQL + FastAPI + CV Ingestion Worker + React Dashboard) with a single command:
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/mariiammaysara/Trace.git
 cd Trace
 
-# 2. Start all services
+# 2. Launch all services
 docker compose up --build
 ```
 
 ### Services Launched
 
-| Service | Address | Description |
-| :--- | :--- | :--- |
-| **Dashboard** | http://localhost:5173 | React Operator Interface |
-| **FastAPI Backend** | http://localhost:8000 | Core REST API |
-| **Interactive Docs** | http://localhost:8000/docs | OpenAPI / Swagger UI |
-| **PostgreSQL** | `localhost:5433` | Relational Storage (`trace` / `trace`) |
-| **Worker** | — | Real-time CV ingestion & database synchronization |
-
-> **Note on Sample Video**: Put any video file at `data/sample.mp4` for the worker to process, or point `TRACE_CAMERA_SOURCE` to a video file / RTSP stream.
+| Service | Local URL | Port | Role |
+| :--- | :--- | :---: | :--- |
+| **Operator Dashboard** | [http://localhost:5173](http://localhost:5173) | `5173` | React 19 Frontend with live HUD and demo scenarios |
+| **FastAPI Backend** | [http://localhost:8000](http://localhost:8000) | `8000` | Asynchronous REST API & Agent query engine |
+| **Interactive Docs** | [http://localhost:8000/docs](http://localhost:8000/docs) | `8000` | OpenAPI / Swagger interactive documentation |
+| **PostgreSQL 16** | `localhost:5433` | `5433` | Relational time-series database (`trace` / `trace`) |
 
 ---
 
 ## 13. Local Development Setup
 
-### 1. Prerequisites
-- Python 3.10+
-- Node.js 20+
-- Docker (for PostgreSQL database)
-
-### 2. Backend Setup
+### 1. Backend & Database Setup
 ```bash
-# Start database container
+# Start PostgreSQL database container
 docker compose up -d db
 
 # Create and activate Python virtual environment
 python -m venv .venv
 source .venv/bin/activate       # On Windows: .venv\Scripts\activate
 
-# Install package with all dependencies
+# Install package with development & agent dependencies
 pip install -e ".[dev,agent]"
 
 # Run FastAPI development server
 uvicorn api.app:app --reload --app-dir src --port 8000
 ```
 
-### 3. Frontend Setup
+### 2. Frontend Dashboard Setup
 ```bash
 cd dashboard
 npm install
-npm run dev
-# Dashboard will be available at http://localhost:5173
+npm run dev                     # Available at http://localhost:5173
 ```
 
-### 4. Running Video Pipeline
+### 3. Video Pipeline Execution
 ```bash
-# Process a video and stream trajectories into the database
+# Process a video file and stream trajectory points to database
 python scripts/persist_video.py data/sample.mp4 --camera-id demo
 ```
 
@@ -458,42 +449,39 @@ python scripts/persist_video.py data/sample.mp4 --camera-id demo
 
 | Variable | Default Value | Description |
 | :--- | :--- | :--- |
-| `POSTGRES_USER` | `trace` | PostgreSQL username |
-| `POSTGRES_PASSWORD` | `trace` | PostgreSQL password |
-| `POSTGRES_DB` | `trace` | PostgreSQL database name |
-| `DATABASE_URL` | `postgresql://trace:trace@localhost:5433/trace` | Database connection string |
-| `TRACE_ALLOWED_ORIGINS`| `http://localhost:5173,http://127.0.0.1:5173` | CORS allowed origins |
-| `TRACE_DETECTOR_WEIGHTS`| `yolov8n.pt` | Model weights path or identifier |
-| `TRACE_DETECTOR_CONFIDENCE`| `0.25` | Minimum detection confidence threshold |
-| `TRACE_CAMERA_SOURCE` | `data/sample.mp4` | Video path or RTSP URL |
-| `TRACE_CAMERA_ID` | `demo` | Calibration config identifier |
-| `ANTHROPIC_API_KEY` | *(optional)* | Anthropic API key for Vision Agent |
-| `VITE_API_BASE_URL` | `http://localhost:8000` | Backend API URL consumed by frontend |
+| `DATABASE_URL` | `postgresql://trace:trace@localhost:5433/trace` | PostgreSQL connection string |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | `trace` / `trace` | Database credentials |
+| `TRACE_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | CORS allowed origins |
+| `TRACE_CAMERA_SOURCE` | `data/sample.mp4` | Video file path or RTSP camera stream URL |
+| `TRACE_CAMERA_ID` | `demo` | Active camera calibration config ID |
+| `TRACE_DETECTOR_WEIGHTS` | `yolov8n.pt` | Model checkpoint path or identifier |
+| `TRACE_DETECTOR_CONFIDENCE` | `0.25` | Minimum object detection confidence |
+| `ANTHROPIC_API_KEY` | *(optional)* | API key for Claude 3.5 Vision Agent |
+| `VITE_API_BASE_URL` | `http://localhost:8000` | Backend API URL consumed by React dashboard |
 
 ---
 
 ## 15. REST API Documentation
 
-### Interactive Swagger UI
-Explore and execute requests directly at: **`http://localhost:8000/docs`**
+Interactive OpenAPI documentation and live request runner are available at: **`http://localhost:8000/docs`**
 
-### Core Endpoints
+### API Endpoints Reference
 
-#### Cameras & Fleet
-- `GET /cameras` — List all registered camera sensors.
-- `GET /cameras/{camera_id}/zones` — Retrieve configured spatial polygon zones.
-- `GET /cameras/{camera_id}/lines` — Retrieve configured virtual tripwires.
+| Method | Endpoint | Domain | Description |
+| :---: | :--- | :--- | :--- |
+| `GET` | `/cameras` | Cameras | List all registered camera sensors and configurations |
+| `GET` | `/cameras/{camera_id}/zones` | Cameras | Retrieve polygon boundaries configured for a camera |
+| `GET` | `/cameras/{camera_id}/lines` | Cameras | Retrieve virtual tripwires configured for a camera |
+| `GET` | `/cameras/{camera_id}/objects` | Objects | List all tracked entities and their metadata |
+| `GET` | `/objects/{object_id}/trajectory` | Objects | Fetch full timestamped coordinate trajectory points |
+| `GET` | `/cameras/{camera_id}/events` | Events | Query spatial and kinetic incident violations |
+| `POST` | `/alerts/webhook` | Alerts | Dispatch automated alert triggers to webhook subscribers |
+| `GET` | `/analytics` | Analytics | Retrieve aggregated dwell times, traffic volume, and counts |
+| `POST` | `/agent/query` | AI Agent | Query LLM agent for natural language forensic insights |
 
-#### Objects & Trajectories
-- `GET /cameras/{camera_id}/objects` — List all tracked entities for a camera.
-- `GET /objects/{object_id}/trajectory` — Retrieve timestamped $(x, y)$ coordinate points and bounding boxes.
+### Example Payloads
 
-#### Events & Incidents
-- `GET /cameras/{camera_id}/events` — Retrieve filtered events (`event_type`, `start_time`, `end_time`).
-- `POST /alerts/webhook` — Dispatch alert triggers to configured subscriber endpoints.
-
-#### Analytics & Aggregations
-- `GET /analytics?camera_id=demo` — Retrieve comprehensive statistical summaries:
+#### 1. Real-Time Analytics (`GET /analytics?camera_id=demo`)
 ```json
 {
   "camera_id": "demo",
@@ -506,25 +494,15 @@ Explore and execute requests directly at: **`http://localhost:8000/docs`**
     "ZONE_ENTERED": 18,
     "LINE_CROSSED": 42,
     "OVERSPEED": 5
-  },
-  "per_class_stats": {
-    "car": { "object_count": 92, "event_count": 45 },
-    "person": { "object_count": 56, "event_count": 20 }
   }
 }
 ```
 
-#### Vision Agent Query
-- `POST /agent/query`
+#### 2. Vision Intelligence Query (`POST /agent/query`)
 ```json
-// Request:
 {
-  "query": "Which vehicles exceeded the speed limit near the entrance zone between 10:00 and 10:30?"
-}
-
-// Response:
-{
-  "response": "Between 10:00 and 10:30, Object #42 (car) was recorded travelling at 84 km/h through the entrance zone (speed limit: 50 km/h). Trajectory points and incident timestamp (10:14:22) have been logged.",
+  "query": "Which vehicles exceeded the speed limit near the entrance zone between 10:00 and 10:30?",
+  "response": "Object #42 (car) was recorded travelling at 84 km/h through the entrance zone (speed limit: 50 km/h) at 10:14:22 UTC.",
   "tools_used": ["search_events", "get_object_trajectory"]
 }
 ```
