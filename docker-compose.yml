@@ -63,6 +63,14 @@ services:
       TRACE_CAMERA_SOURCE: ${TRACE_CAMERA_SOURCE:-data/sample.mp4}
       TRACE_CAMERA_ID: ${TRACE_CAMERA_ID:-demo}
       TRACE_NUM_FRAMES: ${TRACE_NUM_FRAMES:-}
+      # Every camera shipped here (configs/cameras/*.json) has an explicitly
+      # placeholder/illustrative homography, not a real survey -- so OVERSPEED
+      # and SUDDEN_STOP, both computed from the homography's world scale, are
+      # physically meaningless (hundreds of world-units/s^2) until a real one
+      # exists. Suppressed by default (unreachably high) for every automatic
+      # worker run; override per-camera in .env once a real homography exists.
+      TRACE_SPEED_LIMIT: ${TRACE_SPEED_LIMIT:-1e9}
+      TRACE_MIN_DECELERATION_MAGNITUDE: ${TRACE_MIN_DECELERATION_MAGNITUDE:-1e9}
     volumes:
       # data/ is gitignored (real footage stays local, never in the image or
       # git history -- see Section 2) -- this bind mount is how a locally

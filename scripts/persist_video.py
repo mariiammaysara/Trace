@@ -95,19 +95,22 @@ def main() -> None:
     parser.add_argument(
         "--speed-limit",
         type=float,
-        default=5.0,
-        help="OVERSPEED threshold, world units/s (default: 5.0, matches EventEngine's own default). "
-        "Set unreachably high (e.g. 1e9) for a camera with only a placeholder/illustrative homography, "
-        "so OVERSPEED never fires against an uncalibrated world scale.",
+        default=float(os.environ.get("TRACE_SPEED_LIMIT", "5.0")),
+        help="OVERSPEED threshold, world units/s; env: TRACE_SPEED_LIMIT (default: %(default)s, matches "
+        "EventEngine's own default). Set unreachably high (e.g. 1e9) for a camera with only a "
+        "placeholder/illustrative homography, so OVERSPEED never fires against an uncalibrated world scale "
+        "-- every camera currently shipped here (demo, demo-trafficlight) is exactly that case; see "
+        "TRACE_STUDY_GUIDE.md's SUDDEN_STOP/OVERSPEED suppression note.",
     )
     parser.add_argument(
         "--min-deceleration-magnitude",
         type=float,
-        default=500.0,
-        help="SUDDEN_STOP threshold, world units/s^2 (default: 500.0, matches EventEngine's own default). "
-        "Same reasoning as --speed-limit: SUDDEN_STOP's deceleration_magnitude is computed via the "
-        "homography's world scale, so set this unreachably high for a camera with only a placeholder "
-        "homography, or SUDDEN_STOP fires on the fake world-space speed swings, not real events.",
+        default=float(os.environ.get("TRACE_MIN_DECELERATION_MAGNITUDE", "500.0")),
+        help="SUDDEN_STOP threshold, world units/s^2; env: TRACE_MIN_DECELERATION_MAGNITUDE (default: "
+        "%(default)s, matches EventEngine's own default). Same reasoning as --speed-limit: "
+        "SUDDEN_STOP's deceleration_magnitude is computed via the homography's world scale, so set this "
+        "unreachably high for a camera with only a placeholder homography, or SUDDEN_STOP fires on the "
+        "fake world-space speed swings, not real events.",
     )
     args = parser.parse_args()
 
