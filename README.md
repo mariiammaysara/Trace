@@ -89,7 +89,7 @@ flowchart LR
     subgraph CLIENT["3. User Interfaces"]
         direction TB
         API <--> DASH["React 19 Operator Dashboard<br/>(Vector Overlays & HUD)"]
-        API <--> AGENT["claude-sonnet-4-5 Agent<br/>(Tool-Grounded Investigation)"]
+        API <--> AGENT["Claude (claude-sonnet-4-5)<br/>(Tool-Grounded Investigation)"]
     end
 ```
 
@@ -113,7 +113,7 @@ flowchart LR
 <br>
 
 4. **Operator Interface & AI Agent (`dashboard/` & `src/agent/`)**  
-   Provides a responsive React 19 dashboard with synchronized SVG vector overlays and sub-second click-to-seek, alongside a tool-using claude-sonnet-4-5 Vision Agent for natural language investigation with safety-gated action approvals.
+   Provides a responsive React 19 dashboard with synchronized SVG vector overlays and sub-second click-to-seek, alongside a tool-using Claude (claude-sonnet-4-5) Vision Agent for natural language investigation with safety-gated action approvals.
 
 ---
 
@@ -169,8 +169,8 @@ The Event Engine evaluates deterministic spatial and kinetic rules over trajecto
 | Event Type | Trigger Logic | Mathematical Condition | Debounce State |
 | :--- | :--- | :--- | :--- |
 | `LINE_CROSSED` | Trajectory vector crosses a directional virtual tripwire | Vector cross-product intersection | Immediate on line intersection |
-| `ZONE_ENTERED` | Object footprint enters a polygon boundary | Point-in-Polygon (`Shapely`) | Confirmed after *N* inside frames |
-| `ZONE_EXITED` | Object footprint leaves an occupied polygon | Point-in-Polygon (`Shapely`) | Confirmed after *N* outside frames |
+| `ZONE_ENTERED` | Object footprint enters a polygon boundary | Point-in-Polygon (`cv2.pointPolygonTest`) | Confirmed after *N* inside frames |
+| `ZONE_EXITED` | Object footprint leaves an occupied polygon | Point-in-Polygon (`cv2.pointPolygonTest`) | Confirmed after *N* outside frames |
 | `LOITERING` | Dwell duration within a designated zone | Accumulated dwell: `t ≥ T_limit` | Maintained until zone exit |
 | `OVERSPEED` | Calibrated ground velocity exceeds threshold | Ground metric speed: `v > v_limit` | Moving-window velocity filter |
 | `STOPPED` | Object remains stationary for a sustained duration | Velocity `v ≈ 0` for `t ≥ T_stop` | Resets on sustained movement |
@@ -265,7 +265,7 @@ $$
 | **YOLOv8n Pretrained** | `bicycle` | 0.521 | 1.000 | **0.995** | **0.895** |
 | **Stage 2 Adapted** | `person` (Surveillance) | **0.003** | **1.000** | **0.995** | **0.697** |
 
-*Stage 2's precision never recovered from Stage 1's collapse (both 0.003 — a ~99.7% false-positive rate on real footage); only mAP50-95 improved (0.309 → 0.697) on this one memorized real clip. This does not demonstrate generalization — see Section 5 for the domain-adaptation analysis.*
+> **Evaluation Insight:** Stage 2's precision never recovered from Stage 1's collapse — both sit at 0.003, meaning roughly 99.7% of Stage 2's detections on this class are false positives. Only mAP50-95 improved relative to the pretrained baseline (0.309 → 0.697), and only on this one memorized real clip. This does NOT demonstrate generalization — it reflects a real, unresolved domain-adaptation failure, documented in full in `TRACE_STUDY_GUIDE.md` Sections 2 and 20.
 
 <br>
 
@@ -278,9 +278,9 @@ Evaluated across 244 continuous video frames under challenging camera angles:
 | **Real Surveillance Video (244 frames)** | **1.000** | **1.000** | **0** | **0** | **0** | **244** |
 | **Synthetic Crossing (Occlusion Stress Test)** | **1.000** | **1.000** | **0** | **0** | **0** | **40** |
 
-**These 1.000 scores are not general tracking performance — each came from one narrow, specific test, not a general benchmark:**
-- *Real Surveillance Video* row: only the **pretrained** YOLOv8n+ByteTrack combination, tracking **one** continuously-visible person across a single near-static 244-frame clip (`data/sample.mp4`) — a scene with no occlusions, no crossings, and nothing for a track id to switch with. Run through the exact same real-footage pipeline, the domain-adapted **Stage 1 and Stage 2** checkpoints produced a complete tracking failure: **MOTA = IDF1 = 0.000, 0/244 matches, 244/244 misses** — a direct consequence of their collapsed detection precision (0.003, see table above). Raw data available in `evaluation/results/tracking_comparison.json`.
-- *Synthetic Crossing* row: a controlled 2-object test where **ground-truth boxes were fed directly into ByteTrack** (no detector in the loop), isolating the tracker's motion-prediction behavior at one specific crossing point. It does not test detection accuracy and does not generalize to harder real-world conditions (occlusion, more objects, non-constant velocity).
+- **Real Video Footage:** Pretrained YOLOv8n + ByteTrack maintains continuous single-object tracking across 244 frames with zero identity switches.
+- **Synthetic Crossing:** Validates Kalman prediction during complete trajectory intersection and cross-object occlusion without detector noise.
+- **Important scope note:** The 'Real Surveillance Video' row above reflects the PRETRAINED YOLOv8n + ByteTrack combination only, on a single near-static clip with one continuously-visible person. Run through the exact same 244 real frames, the domain-adapted Stage 1 and Stage 2 checkpoints produced a complete tracking failure instead: MOTA = IDF1 = 0.000, 0 of 244 matches, 244 misses — a direct consequence of their collapsed detection precision (see Edit 1 above). These perfect 1.000 scores are not general tracking performance; see `TRACE_STUDY_GUIDE.md` Section 15 for the full three-model breakdown.
 
 ---
 
@@ -338,19 +338,28 @@ The operator dashboard is built with **React 19**, **Vite**, and **Tailwind CSS 
 
 ## 9. Vision Intelligence Agent (LLM)
 
-TRACE embeds an investigation agent powered by **claude-sonnet-4-5** with strict database grounding and a human-in-the-loop safety gate:
+TRACE embeds an investigation agent powered by **Claude (claude-sonnet-4-5)** with strict database grounding and a human-in-the-loop safety gate:
 
 ### Agent Tool Interface
 
+The real, complete tool registry (`src/agent/tools.py`'s `TOOL_SPECS`, 12 tools) — 7 read-only, 5 write-gated:
+
 | Tool Name | Operation Type | Capability |
 | :--- | :--- | :--- |
-| `get_camera_list` | Read | Enumerates configured camera sensors and topology |
-| `query_analytics` | Read | Aggregates dwell durations, traffic density, and event frequency |
-| `search_events` | Read | Queries structured spatial violations with time-range filters |
-| `get_object_trajectory` | Read | Retrieves raw coordinate history, speeds, and bounding boxes |
-| `propose_action` | Write (Gated) | Generates pending alert or geometry mutations requiring operator review |
+| `get_camera_events` | Read | Lists events on one camera, optionally filtered by event type and/or `[start_time, end_time]` |
+| `get_object_stats` | Read | Identity, lifespan (`first_seen`/`last_seen`), and full event history for one tracked object |
+| `get_zone_events` | Read | `ZONE_ENTERED`/`ZONE_EXITED` events for one configured zone |
+| `get_line_crossings` | Read | `LINE_CROSSED` events for one configured line |
+| `get_traffic_stats` | Read | Traffic volume (distinct objects crossing a line) and raw crossing count, optionally over a time range |
+| `get_event` | Read | Full detail for one specific event by its database id |
+| `get_video_segment` | Read | The video and a `[start_time, end_time]` window around a moment, for investigating what happened around an event |
+| `create_alert` | Write (Gated) | Proposes an alert on a camera for a given event type |
+| `configure_zone` | Write (Gated) | Proposes a new polygon zone on a camera |
+| `configure_line` | Write (Gated) | Proposes a new virtual line on a camera |
+| `generate_report` | Write (Gated) | Proposes generating an analytics report for a camera |
+| `send_notification` | Write (Gated) | Proposes a notification about a camera via the `dashboard` or `api` delivery channel |
 
-> **Safety Gate:** The agent operates under a **Propose $\rightarrow$ Review $\rightarrow$ Execute** model. High-impact operations (e.g. dispatching webhooks or updating zones) require explicit operator confirmation tokens.
+> **Safety Gate:** All 5 write-gated tools only validate and record a `pending_action_id` (Section 13) — none of them ever mutate cameras/zones/lines/alerts directly, no matter what the model does or doesn't say about confirmation. A human must call `POST /agent/actions/{id}/approve` before the action actually executes. There is no webhook dispatch anywhere in TRACE — `send_notification`'s only real delivery channels are `dashboard` and `api`.
 
 ---
 
@@ -359,11 +368,11 @@ TRACE embeds an investigation agent powered by **claude-sonnet-4-5** with strict
 | Layer | Core Technologies | Primary Role in TRACE |
 | :--- | :--- | :--- |
 | **Computer Vision** | `Ultralytics YOLOv8`, `ByteTrack`, `OpenCV` | Real-time object detection, Kalman tracking, and frame ingestion |
-| **Spatial Geometry** | `NumPy`, `SciPy`, `Shapely` | 3×3 metric planar homography, trajectory smoothing, polygon tests |
+| **Spatial Geometry** | `NumPy`, `OpenCV` (`cv2.findHomography`, `cv2.pointPolygonTest`) | 3×3 metric planar homography, point-in-polygon zone tests, moving-average speed smoothing |
 | **Inference Backends**| `PyTorch 2.0+`, `ONNX Runtime`, `TensorRT` | CPU/GPU execution engines and model quantization |
 | **Backend & API** | `Python 3.10+`, `FastAPI`, `Pydantic v2` | High-throughput asynchronous REST API and schema validation |
 | **Database** | `PostgreSQL 16`, `SQLAlchemy 2.0` | Relational storage for tracks, telemetry points, and incident logs |
-| **AI Intelligence** | `Anthropic claude-sonnet-4-5` | Natural language forensic investigation and tool-grounded queries |
+| **AI Intelligence** | `Anthropic Claude (claude-sonnet-4-5)` | Natural language forensic investigation and tool-grounded queries |
 | **Operator Frontend** | `React 19`, `TypeScript`, `Vite`, `Tailwind CSS v4` | High-performance dashboard, SVG vector HUD, and demo scenarios |
 | **DevOps & QA** | `Docker Compose`, `Pytest`, `Vitest`, `Oxlint` | Container orchestration, 302 automated unit/integration tests |
 
@@ -374,13 +383,15 @@ TRACE embeds an investigation agent powered by **claude-sonnet-4-5** with strict
 ```text
 Trace/
 ├── src/                  # Core Python engine (detection, tracking, event engine, API, agent)
-├── dashboard/            # React 19 operator dashboard (HUD telemetry, vector overlays, demo)
+├── dashboard/            # React 19 operator dashboard (HUD telemetry, vector overlays, demo);
+│                         #   70 frontend vitest tests live co-located as src/**/*.test.tsx here,
+│                         #   not under tests/ below
 ├── configs/              # Per-camera homography calibrations, polygons, and virtual tripwires
 ├── scripts/              # Video processing, offline visualizers, and PostgreSQL batch sync
 ├── training/             # Two-stage YOLOv8 fine-tuning & domain adaptation pipeline
 ├── evaluation/           # Formal CLEAR MOT tracking & mAP detection evaluation harness
 ├── benchmarks/           # Latency benchmarker, ONNX Runtime & TensorRT FP16 export utilities
-├── tests/                # 302 automated backend pytest & frontend vitest test suites
+├── tests/                # 232 backend pytest tests only (see dashboard/ above for the other 70)
 ├── docker-compose.yml    # Full-stack container orchestration (Postgres 16, API, Dashboard)
 └── Dockerfile            # Multi-stage Python backend container image
 ```
@@ -455,7 +466,7 @@ python scripts/persist_video.py data/sample.mp4 --camera-id demo
 | `TRACE_CAMERA_ID` | `demo` | Active camera calibration config ID |
 | `TRACE_DETECTOR_WEIGHTS` | `yolov8n.pt` | Model checkpoint path or identifier |
 | `TRACE_DETECTOR_CONFIDENCE` | `0.25` | Minimum object detection confidence |
-| `ANTHROPIC_API_KEY` | *(optional)* | API key for claude-sonnet-4-5 Vision Agent |
+| `ANTHROPIC_API_KEY` | *(optional)* | API key for Claude (claude-sonnet-4-5) Vision Agent |
 | `VITE_API_BASE_URL` | `http://localhost:8000` | Backend API URL consumed by React dashboard |
 
 ---
@@ -472,9 +483,9 @@ Interactive OpenAPI documentation and live request runner are available at: **`h
 | `GET` | `/cameras/{camera_id}/zones` | Cameras | Retrieve polygon boundaries configured for a camera |
 | `GET` | `/cameras/{camera_id}/lines` | Cameras | Retrieve virtual tripwires configured for a camera |
 | `GET` | `/cameras/{camera_id}/objects` | Objects | List all tracked entities and their metadata |
-| `GET` | `/objects/{object_id}/trajectory` | Objects | Fetch full timestamped coordinate trajectory points |
+| `GET` | `/objects/{id}/trajectory` | Objects | Fetch full timestamped coordinate trajectory points |
 | `GET` | `/cameras/{camera_id}/events` | Events | Query spatial and kinetic incident violations |
-| `POST` | `/alerts/webhook` | Alerts | Dispatch automated alert triggers to webhook subscribers |
+| `POST` | `/alerts` | Alerts | Directly create an alert record for a camera (bypasses the agent's propose/approve gate — a human/system POSTing here is already the confirmation that gate exists to require) |
 | `GET` | `/analytics` | Analytics | Retrieve aggregated dwell times, traffic volume, and counts |
 | `POST` | `/agent/query` | AI Agent | Query LLM agent for natural language forensic insights |
 
@@ -497,12 +508,12 @@ Interactive OpenAPI documentation and live request runner are available at: **`h
 }
 ```
 
-#### 2. Vision Intelligence Query (`POST /agent/query`)
+#### 2. Vision Intelligence Query (`POST /agent/query`) — real data, from the `demo-trafficlight` camera's actual persisted run (Section 4)
 ```json
 {
-  "query": "Which vehicles exceeded the speed limit near the entrance zone between 10:00 and 10:30?",
-  "response": "Object #42 (car) was recorded travelling at 84 km/h through the entrance zone (speed limit: 50 km/h) at 10:14:22 UTC.",
-  "tools_used": ["search_events", "get_object_trajectory"]
+  "query": "Did any vehicle cross the tripwire line on the demo-trafficlight camera?",
+  "response": "Yes — object #2 (car) crossed the 'crosswalk_tripwire' line at t=9.5s, moving right to left.",
+  "tools_used": ["get_line_crossings"]
 }
 ```
 
