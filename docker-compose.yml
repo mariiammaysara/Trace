@@ -29,6 +29,16 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       TRACE_LLM_MODEL: ${TRACE_LLM_MODEL:-}
+    volumes:
+      # Same bind mount as `worker` below -- GET /videos/{id}/stream resolves
+      # Video.path (e.g. "data/sample.mp4") relative to this container's own
+      # filesystem. Without this mount the path doesn't exist here even
+      # though `worker` (which wrote the row) can see it fine, so every
+      # /stream request 404s -- which the dashboard's <video> element then
+      # reports as error.code 4 ("codec isn't supported"), since Chrome maps
+      # any failed src response to MEDIA_ERR_SRC_NOT_SUPPORTED, not just a
+      # genuine decode failure.
+      - ./data:/app/data:ro
     depends_on:
       db:
         condition: service_healthy
