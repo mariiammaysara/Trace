@@ -23,11 +23,21 @@ from pydantic import BaseModel
 
 router = APIRouter(tags=["evaluation"])
 
-# src/api/routers/evaluation.py -> src/api/routers -> src/api -> src -> repo root.
-# Same convention as evaluation/detection/evaluate.py and evaluation/tracking/evaluate.py.
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-DETECTION_RESULTS_PATH = REPO_ROOT / "evaluation" / "results" / "detection_comparison.json"
-TRACKING_RESULTS_PATH = REPO_ROOT / "evaluation" / "results" / "tracking_comparison.json"
+# Relative to the process's working directory -- the same convention already
+# used for configs/cameras/ (src/geometry/homography.py, line_crossing.py,
+# zone.py's configs_dir="configs/cameras" default), not a __file__-relative
+# walk up from this module's own location. That distinction matters here:
+# evaluation/detection/evaluate.py's REPO_ROOT = Path(__file__)...parent
+# convention is only valid for a script always run loose from a source
+# checkout; this module ships inside the `api` package that gets `pip
+# install`ed (Dockerfile), so __file__ resolves to its site-packages install
+# location at runtime, not this repo -- Path(__file__).resolve().parent * 4
+# landed at /usr/local/lib/python3.11/ inside the container, not /app, which
+# is why /evaluation 503'd there even with evaluation/results/ copied into
+# the image. uvicorn (Dockerfile CMD) and every documented local dev command
+# already run with the repo root as CWD, same as configs/cameras/ relies on.
+DETECTION_RESULTS_PATH = Path("evaluation/results/detection_comparison.json")
+TRACKING_RESULTS_PATH = Path("evaluation/results/tracking_comparison.json")
 
 
 class EvaluationResponse(BaseModel):

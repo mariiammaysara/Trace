@@ -49,6 +49,15 @@ RUN pip install --no-cache-dir .[agent]
 COPY scripts ./scripts
 COPY configs ./configs
 
+# Phase 14's checked-in evaluation-harness output (evaluation/results/*.json,
+# git-tracked -- unlike data/, this is reference data, not gitignored real
+# footage) -- GET /evaluation (src/api/routers/evaluation.py) reads these two
+# files straight off disk. Same "reference data baked into the image at build
+# time" treatment as configs/ above, not a runtime bind mount like data/: the
+# results are static, checked-in artifacts of a harness that's re-run
+# manually and re-committed, not something regenerated per-container.
+COPY evaluation/results ./evaluation/results
+
 # Real weights (yolov8n.pt) are intentionally NOT copied here -- they're
 # gitignored, not source (see Section 2), and Ultralytics downloads them
 # automatically on first use if TRACE_DETECTOR_WEIGHTS points at a bare
