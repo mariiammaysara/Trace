@@ -459,14 +459,28 @@ def test_query_agent_missing_question_fails_validation(client):
 
 def test_query_agent_without_configured_llm_returns_503(client, monkeypatch):
     # No dependency override here -- get_agent() runs for real, which calls
-    # build_default_llm_client(); this asserts the "no LLM configured" case
-    # is a clear 503, not a generic 500 or a silent fake answer.
+    # build_llm_client(); this asserts the "no LLM configured" case is a
+    # clear 503, not a generic 500 or a silent fake answer.
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
     response = client.post("/agent/query", json={"question": "anything"})
 
     assert response.status_code == 503
     assert "ANTHROPIC_API_KEY" in response.json()["detail"]
+
+
+def test_query_agent_with_openrouter_provider_and_no_key_returns_503(client, monkeypatch):
+    # Same shape as the Anthropic case above, but for TRACE_LLM_PROVIDER=
+    # openrouter -- confirms build_llm_client()'s second branch (src/agent/
+    # llm.py) is actually wired through deps.py, not just present in the
+    # module and never reached from a real request.
+    monkeypatch.setenv("TRACE_LLM_PROVIDER", "openrouter")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    response = client.post("/agent/query", json={"question": "anything"})
+
+    assert response.status_code == 503
+    assert "OPENROUTER_API_KEY" in response.json()["detail"]
 
 
 # --- POST /alerts, GET /cameras/{id}/alerts ---

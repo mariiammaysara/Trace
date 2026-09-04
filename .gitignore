@@ -37,3 +37,6 @@ training/data/
 training/runs/
 .claude/
 TRACE_STUDY_GUIDE.md
+
+# personal research note, unrelated to the TRACE codebase
+docs/openrouter_free_models.md

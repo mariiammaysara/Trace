@@ -338,7 +338,14 @@ The operator dashboard is built with **React 19**, **Vite**, and **Tailwind CSS 
 
 ## 9. Vision Intelligence Agent (LLM)
 
-TRACE embeds an investigation agent powered by **Claude (claude-sonnet-4-5)** with strict database grounding and a human-in-the-loop safety gate:
+TRACE embeds an investigation agent with strict database grounding and a human-in-the-loop safety gate. The LLM backend is pluggable behind one `LLMClient`/`LLMSession` protocol (`src/agent/llm.py`) — neither the agent's orchestration loop nor the API layer ever imports a concrete provider class, only that protocol and one factory function, `build_llm_client()`:
+
+| `TRACE_LLM_PROVIDER` | Backend | Needs | Default model |
+| :--- | :--- | :--- | :--- |
+| `anthropic` (default) | Anthropic Messages API tool-use | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` |
+| `openrouter` | OpenRouter's OpenAI-compatible chat-completions tool calling | `OPENROUTER_API_KEY` ([openrouter.ai/keys](https://openrouter.ai/keys), free tier works) | `openrouter/free` |
+
+`TRACE_LLM_MODEL` overrides either provider's default model. This was verified with real, live end-to-end queries — not just wired up and assumed to work: with `TRACE_LLM_PROVIDER=openrouter`, `openrouter/free` reliably called real tools (`get_camera_events`, `get_traffic_stats`) against real seeded data and composed answers that matched the seeded ground truth exactly (see the worked example in Section 15's request/response pair below).
 
 ### Agent Tool Interface
 
@@ -372,9 +379,9 @@ The real, complete tool registry (`src/agent/tools.py`'s `TOOL_SPECS`, 12 tools)
 | **Inference Backends**| `PyTorch 2.0+`, `ONNX Runtime`, `TensorRT` | CPU/GPU execution engines and model quantization |
 | **Backend & API** | `Python 3.10+`, `FastAPI`, `Pydantic v2` | High-throughput asynchronous REST API and schema validation |
 | **Database** | `PostgreSQL 16`, `SQLAlchemy 2.0` | Relational storage for tracks, telemetry points, and incident logs |
-| **AI Intelligence** | `Anthropic Claude (claude-sonnet-4-5)` | Natural language forensic investigation and tool-grounded queries |
+| **AI Intelligence** | Anthropic Claude (`claude-sonnet-4-5`, default) or OpenRouter (`openrouter/free`, verified) | Natural language forensic investigation and tool-grounded queries, provider selected via `TRACE_LLM_PROVIDER` |
 | **Operator Frontend** | `React 19`, `TypeScript`, `Vite`, `Tailwind CSS v4` | High-performance dashboard, SVG vector HUD, and demo scenarios |
-| **DevOps & QA** | `Docker Compose`, `Pytest`, `Vitest`, `Oxlint` | Container orchestration, 302 automated unit/integration tests |
+| **DevOps & QA** | `Docker Compose`, `Pytest`, `Vitest`, `Oxlint` | Container orchestration, 313 automated unit/integration tests |
 
 ---
 
@@ -391,7 +398,7 @@ Trace/
 ├── training/             # Two-stage YOLOv8 fine-tuning & domain adaptation pipeline
 ├── evaluation/           # Formal CLEAR MOT tracking & mAP detection evaluation harness
 ├── benchmarks/           # Latency benchmarker, ONNX Runtime & TensorRT FP16 export utilities
-├── tests/                # 232 backend pytest tests only (see dashboard/ above for the other 70)
+├── tests/                # 243 backend pytest tests only (see dashboard/ above for the other 70)
 ├── docker-compose.yml    # Full-stack container orchestration (Postgres 16, API, Dashboard)
 └── Dockerfile            # Multi-stage Python backend container image
 ```
@@ -466,7 +473,10 @@ python scripts/persist_video.py data/sample.mp4 --camera-id demo
 | `TRACE_CAMERA_ID` | `demo` | Active camera calibration config ID |
 | `TRACE_DETECTOR_WEIGHTS` | `yolov8n.pt` | Model checkpoint path or identifier |
 | `TRACE_DETECTOR_CONFIDENCE` | `0.25` | Minimum object detection confidence |
-| `ANTHROPIC_API_KEY` | *(optional)* | API key for Claude (claude-sonnet-4-5) Vision Agent |
+| `TRACE_LLM_PROVIDER` | `anthropic` | Vision Agent LLM backend: `anthropic` or `openrouter` (Section 9) |
+| `ANTHROPIC_API_KEY` | *(optional)* | API key for the `anthropic` provider (Claude `claude-sonnet-4-5`) |
+| `OPENROUTER_API_KEY` | *(optional)* | API key for the `openrouter` provider ([openrouter.ai/keys](https://openrouter.ai/keys), free tier works) |
+| `TRACE_LLM_MODEL` | *(provider's default)* | Overrides the active provider's default model |
 | `VITE_API_BASE_URL` | `http://localhost:8000` | Backend API URL consumed by React dashboard |
 
 ---
@@ -508,12 +518,12 @@ Interactive OpenAPI documentation and live request runner are available at: **`h
 }
 ```
 
-#### 2. Vision Intelligence Query (`POST /agent/query`) — real data, from the `demo-trafficlight` camera's actual persisted run (Section 4)
+#### 2. Vision Intelligence Query (`POST /agent/query`) — a real, live `TRACE_LLM_PROVIDER=openrouter` (`openrouter/free`) response, against the `demo-trafficlight` camera's actual persisted run (Section 4) — not hand-written
 ```json
 {
   "query": "Did any vehicle cross the tripwire line on the demo-trafficlight camera?",
-  "response": "Yes — object #2 (car) crossed the 'crosswalk_tripwire' line at t=9.5s, moving right to left.",
-  "tools_used": ["get_line_crossings"]
+  "response": "Yes. The demo-trafficlight camera recorded 2 LINE_CROSSED events, both by object 3 (a car) crossing the 'crosswalk_tripwire' line, right_to_left, at approximately 9.5s.",
+  "tools_used": ["get_camera_events"]
 }
 ```
 
@@ -524,7 +534,7 @@ Interactive OpenAPI documentation and live request runner are available at: **`h
 TRACE maintains 100% test coverage across backend mathematical logic, API routers, database migrations, and frontend UI components:
 
 ```bash
-# 1. Backend Pytest Suites (232 tests)
+# 1. Backend Pytest Suites (243 tests)
 pytest tests/ -v
 
 # 2. Frontend Vitest Suites (70 tests)
@@ -534,7 +544,7 @@ cd dashboard && npm test -- --run
 cd dashboard && npm run lint
 ```
 
-> **Total Test Coverage:** **302 automated tests passed** (232 backend pytest + 70 frontend vitest).
+> **Total Test Coverage:** **313 automated tests passed** (243 backend pytest + 70 frontend vitest).
 
 ---
 

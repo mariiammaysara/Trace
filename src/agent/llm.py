@@ -3,8 +3,15 @@ whatever actually does the reasoning. Kept as a small protocol so the loop
 itself never depends on a specific provider's message format -- only on
 "give me the next turn" / "here are the tool results, give me the next turn."
 
-AnthropicLLMClient is the real implementation, using the Messages API's
-tool-use feature. It is NOT exercised by this codebase's test suite: this
+Two real implementations exist, both built against this same LLMClient /
+LLMSession protocol so agent.py never imports or branches on a concrete
+provider class: AnthropicLLMClient (the Messages API's tool-use feature) and
+OpenRouterLLMClient (OpenRouter's OpenAI-compatible chat-completions tool
+calling, so a free-tier model can be used instead of a paid Anthropic key).
+build_llm_client() is the one place that picks between them, via
+TRACE_LLM_PROVIDER (env or explicit argument).
+
+AnthropicLLMClient is NOT exercised by this codebase's test suite: this
 environment has no configured LLM API key (checked at Phase 11 build time --
 only an empty placeholder GEMINI_API_KEY exists, no ANTHROPIC_API_KEY), so
 there is no way to make a real, live call here. It's implemented against the
@@ -15,16 +22,24 @@ FakeLLMClient below, which implement the exact same LLMClient protocol so
 the real orchestration code in agent.py is what's actually under test --
 only the "which tool, what final wording" decision is scripted instead of
 model-generated. See TRACE_STUDY_GUIDE.md Section 12 for the full caveat.
+OpenRouterLLMClient was verified with real, live end-to-end queries against
+seeded data (see the docstring above build_llm_client() and Section 12).
 """
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol
 
 from agent.prompts import SYSTEM_PROMPT
 from agent.tools import TOOL_SPECS, ToolSpec
+
+# Config constants -- never hardcoded inline inside a client class.
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5"
+DEFAULT_OPENROUTER_MODEL = "openrouter/free"
 
 
 @dataclass(frozen=True)
@@ -62,12 +77,20 @@ class LLMClient(Protocol):
     def new_session(self) -> LLMSession: ...
 
 
+class LLMProviderError(RuntimeError):
+    """Raised by an LLMSession when the underlying provider SDK call fails,
+    wrapping whatever provider-specific exception occurred (anthropic.APIError,
+    openai.OpenAIError, ...). Calling code (agent.py, API routes) only ever
+    needs to handle this one type -- never a provider-specific exception --
+    to react correctly regardless of which provider is active."""
+
+
 class AnthropicLLMClient:
     """Real implementation, backed by the `anthropic` Python SDK's tool-use
     protocol. See this module's docstring for why it's untested by live call
     in this environment."""
 
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-5") -> None:
+    def __init__(self, api_key: str, model: str = DEFAULT_ANTHROPIC_MODEL) -> None:
         self._api_key = api_key
         self._model = model
 
@@ -107,13 +130,19 @@ class _AnthropicLLMSession:
         return self._step()
 
     def _step(self) -> ModelTurn:
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=self._messages,
-            tools=self._tools,
-        )
+        import anthropic
+
+        try:
+            response = self._client.messages.create(
+                model=self._model,
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                messages=self._messages,
+                tools=self._tools,
+            )
+        except anthropic.APIError as exc:
+            raise LLMProviderError(f"Anthropic API call failed: {exc}") from exc
+
         self._messages.append({"role": "assistant", "content": response.content})
 
         tool_calls = [
@@ -128,18 +157,115 @@ class _AnthropicLLMSession:
         return ModelTurn(text=text)
 
 
+class OpenRouterLLMClient:
+    """Second real implementation of LLMClient, backed by the `openai` SDK
+    pointed at OpenRouter's OpenAI-compatible chat-completions endpoint
+    (OPENROUTER_BASE_URL). Lets the Vision Agent run against any OpenRouter
+    model -- including its free tier -- via the exact same LLMClient /
+    LLMSession protocol AnthropicLLMClient implements, so agent.py and every
+    caller above it are unaware which provider is active."""
+
+    def __init__(
+        self, api_key: str, model: str = DEFAULT_OPENROUTER_MODEL, base_url: str = OPENROUTER_BASE_URL
+    ) -> None:
+        self._api_key = api_key
+        self._model = model
+        self._base_url = base_url
+
+    def new_session(self) -> "_OpenRouterLLMSession":
+        import openai  # lazy import: only needed on the real-LLM path
+
+        client = openai.OpenAI(api_key=self._api_key, base_url=self._base_url)
+        return _OpenRouterLLMSession(client, self._model)
+
+
+def _tool_specs_to_openai(specs: List[ToolSpec]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "type": "function",
+            "function": {"name": s.name, "description": s.description, "parameters": s.input_schema},
+        }
+        for s in specs
+    ]
+
+
+class _OpenRouterLLMSession:
+    def __init__(self, client: Any, model: str) -> None:
+        self._client = client
+        self._model = model
+        self._messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        self._tools = _tool_specs_to_openai(TOOL_SPECS)
+
+    def start(self, question: str) -> ModelTurn:
+        self._messages.append({"role": "user", "content": question})
+        return self._step()
+
+    def submit_tool_results(self, results: List[ToolResult]) -> ModelTurn:
+        for r in results:
+            self._messages.append({"role": "tool", "tool_call_id": r.call_id, "content": json.dumps(r.output)})
+        return self._step()
+
+    def _step(self) -> ModelTurn:
+        import openai
+
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=self._messages,
+                tools=self._tools,
+            )
+        except openai.OpenAIError as exc:
+            raise LLMProviderError(f"OpenRouter API call failed: {exc}") from exc
+
+        message = response.choices[0].message
+        self._messages.append(message.model_dump(exclude_none=True))
+
+        if message.tool_calls:
+            tool_calls = [
+                ToolCallRequest(id=call.id, name=call.function.name, arguments=json.loads(call.function.arguments))
+                for call in message.tool_calls
+            ]
+            return ModelTurn(tool_calls=tool_calls)
+
+        return ModelTurn(text=message.content or "")
+
+
 class LLMNotConfiguredError(RuntimeError):
-    """Raised by build_default_llm_client() when no real LLM API key is
-    available -- a route/caller should turn this into a clear error to the
-    user, never silently fall back to a scripted/fake answer over a real API
-    (that would misrepresent canned output as a real model's reasoning)."""
+    """Raised by build_llm_client() when no real LLM API key is available for
+    the selected provider -- a route/caller should turn this into a clear
+    error to the user, never silently fall back to a scripted/fake answer
+    over a real API (that would misrepresent canned output as a real
+    model's reasoning)."""
 
 
-def build_default_llm_client() -> LLMClient:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise LLMNotConfiguredError(
-            "ANTHROPIC_API_KEY is not set -- the Vision Agent has no LLM to call. "
-            "Set a real Anthropic API key to use POST /agent/query."
-        )
-    return AnthropicLLMClient(api_key=api_key)
+def build_llm_client(provider: Optional[str] = None) -> LLMClient:
+    """The single factory/branch point for provider selection (Open/Closed:
+    adding a provider means one new class + one branch here, nothing else).
+    `provider` overrides the TRACE_LLM_PROVIDER env var (default
+    "anthropic") -- passing it explicitly, e.g. from a test, swaps providers
+    via a plain argument, no global state or monkeypatching required.
+    """
+    resolved = (provider if provider is not None else os.environ.get("TRACE_LLM_PROVIDER", "anthropic")).strip().lower()
+
+    if resolved == "anthropic":
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise LLMNotConfiguredError(
+                "ANTHROPIC_API_KEY is not set -- the Vision Agent has no LLM to call. "
+                "Set a real Anthropic API key to use POST /agent/query."
+            )
+        model = os.environ.get("TRACE_LLM_MODEL", DEFAULT_ANTHROPIC_MODEL)
+        return AnthropicLLMClient(api_key=api_key, model=model)
+
+    if resolved == "openrouter":
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            raise LLMNotConfiguredError(
+                "OPENROUTER_API_KEY is not set -- the Vision Agent has no LLM to call. "
+                "Set a real OpenRouter API key (from openrouter.ai/keys) to use POST /agent/query "
+                "with TRACE_LLM_PROVIDER=openrouter."
+            )
+        model = os.environ.get("TRACE_LLM_MODEL", DEFAULT_OPENROUTER_MODEL)
+        return OpenRouterLLMClient(api_key=api_key, model=model)
+
+    raise LLMNotConfiguredError(f"Unknown TRACE_LLM_PROVIDER {resolved!r} -- expected 'anthropic' or 'openrouter'.")
