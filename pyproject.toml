@@ -29,5 +29,17 @@ agent = [
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+# packages.find below only discovers real packages (directories with
+# __init__.py) under src/ -- logging_config.py is a lone top-level module
+# there, so it needs its own py-modules entry or it silently never ends up
+# in the installed distribution (ModuleNotFoundError: No module named
+# 'logging_config' the moment api/app.py imports it), even though `pip
+# install .` succeeds with no error and every package-based import works.
+py-modules = ["logging_config"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

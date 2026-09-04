@@ -25,7 +25,20 @@ COPY src ./src
 # stack no code path here can exercise. Installing it first satisfies
 # ultralytics' `torch>=1.8.0` constraint before pip's resolver ever
 # considers the CUDA build.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+#
+# torchvision is installed HERE, in the same command and from the same CPU
+# index, not left for `pip install .[agent]` below to resolve on its own --
+# left separate, pip is already satisfied once ultralytics' bare
+# `torchvision>=0.9.0` constraint is met and pulls whatever torchvision
+# build the *default* PyPI index resolves that against, which is not
+# guaranteed to be the exact matching +cpu build for the torch version just
+# installed above. A version/ABI mismatch there doesn't fail at install
+# time -- pip has no way to check that -- it fails at first real inference
+# call: `RuntimeError: operator torchvision::nms does not exist` (thrown
+# from inside torchvision's compiled extension the moment
+# YoloDetector.detect() runs). Pinning both from the same index in one
+# command is what guarantees a matching pair.
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
 # [agent] included by default so the Vision Agent works out of the box once
 # ANTHROPIC_API_KEY is set -- without it, GET /agent/query would 503 with an
