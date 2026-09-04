@@ -20,7 +20,7 @@
 <img src="docs/demo_hero.gif" alt="TRACE Live Detection & Tracking Demo" width="760" />
 
 <p align="center">
-  <sub><b>Live Multi-Object Tracking & Event Engine Demo</b> — Real-time YOLOv8 + ByteTrack inference with metric planar homography and spatial line crossing (verified <code>LINE_CROSSED</code> event at t=9.5s on object <code>#2</code>).</sub>
+  <sub><b>Live Multi-Object Tracking & Event Engine Demo</b> — Real-time YOLOv8 + ByteTrack inference with metric planar homography and spatial line crossing (verified <code>LINE_CROSSED</code> event at t=9.5s on object <code>#134</code>).</sub>
 </p>
 
 </div>
@@ -197,7 +197,7 @@ Evaluated on static street-corner footage (26.7s / 801 frames, camera `demo-traf
 | :--- | :--- | :--- |
 | **Average Detections** | 16.13 / frame | Multi-class detection across vehicles & pedestrians |
 | **Active Tracks** | 130 unique tracks | Continuous tracking through signal queues |
-| **`LINE_CROSSED`** | **1 event** | Object `#2` crossing tripwire at `t = 9.5s` |
+| **`LINE_CROSSED`** | **1 event** | Object `#134` crossing tripwire at `t = 9.5s` |
 | **`STOPPED`** | 30 events | Vehicles halting at the traffic signal |
 | **Track Lifecycle** | 130 enter / 112 exit | Boundary appearance and departure indexing |
 
@@ -522,7 +522,7 @@ Interactive OpenAPI documentation and live request runner are available at: **`h
 ```json
 {
   "query": "Did any vehicle cross the tripwire line on the demo-trafficlight camera?",
-  "response": "Yes. The demo-trafficlight camera recorded 2 LINE_CROSSED events, both by object 3 (a car) crossing the 'crosswalk_tripwire' line, right_to_left, at approximately 9.5s.",
+  "response": "Yes, a vehicle did cross the tripwire line on the demo-trafficlight camera. Here are the details:\n\n- **Object ID:** 134\n- **Class:** car\n- **Timestamp:** 9.5 seconds\n- **Line:** `crosswalk_tripwire`\n- **Direction:** right_to_left\n- **Confidence:** 0.49\n\nOne LINE_CROSSED event was recorded for this camera.",
   "tools_used": ["get_camera_events"]
 }
 ```
