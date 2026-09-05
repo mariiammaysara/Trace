@@ -12,9 +12,9 @@ arguments is a real, valid way to run it -- every default below is exactly
 what the worker container runs with.
 
 Usage:
-    python scripts/persist_video.py path/to/video.mp4 --camera-id demo
-    python scripts/persist_video.py 0 --camera-id demo --database-url postgresql://trace:trace@localhost:5433/trace
-    TRACE_CAMERA_SOURCE=data/sample.mp4 TRACE_CAMERA_ID=demo python scripts/persist_video.py
+    python scripts/persist_video.py path/to/video.mp4 --camera-id demo-trafficlight
+    python scripts/persist_video.py 0 --camera-id demo-trafficlight --database-url postgresql://trace:trace@localhost:5433/trace
+    TRACE_CAMERA_SOURCE=data/demo_trafficlight.mp4 TRACE_CAMERA_ID=demo-trafficlight python scripts/persist_video.py
 """
 
 from __future__ import annotations
@@ -41,9 +41,11 @@ from tracking.byte_tracker import ByteTracker
 
 logger = logging.getLogger("trace.worker")
 
-# The same demo asset every phase's manual testing has used (Sections 2/3/8/9/10/13/15) --
-# a real, working, zero-setup default so the worker container runs out of the box.
-DEFAULT_SOURCE = "data/sample.mp4"
+# camera "demo" (data/sample.mp4) was real webcam footage of an identifiable
+# person -- removed from disk for privacy. demo-trafficlight (real,
+# non-personal stock street footage) is the default now -- a real, working,
+# zero-setup default so the worker container still runs out of the box.
+DEFAULT_SOURCE = "data/demo_trafficlight.mp4"
 
 
 def _parse_source(raw: str) -> "str | int":
@@ -66,7 +68,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--camera-id",
-        default=os.environ.get("TRACE_CAMERA_ID", "demo"),
+        default=os.environ.get("TRACE_CAMERA_ID", "demo-trafficlight"),
         help="which configs/cameras/<id>.json to load; env: TRACE_CAMERA_ID (default: %(default)s)",
     )
     parser.add_argument("--configs-dir", default="configs/cameras", help="directory holding per-camera configs (default: %(default)s)")

@@ -43,6 +43,28 @@ const mockTrajectory: api.Trajectory = {
   points: [{ frame_id: 0, timestamp: 0, x: 10, y: 10, x_min: 0, y_min: 0, x_max: 20, y_max: 20 }],
 }
 
+const otherCamera: api.Camera = {
+  id: 2,
+  camera_id: 'demo-trafficlight',
+  name: 'Trafficlight Camera',
+  location: null,
+  calibration_reference: null,
+}
+
+const mockZone: api.Zone = { id: 1, zone_id: 'restricted_area', polygon: [[0, 0], [1, 0], [1, 1], [0, 1]] }
+const mockLine: api.Line = { id: 1, line_id: 'entrance_line', start: [0, 0], end: [1, 1] }
+const mockEvent: api.TraceEvent = {
+  id: 1,
+  object_id: 1,
+  event_type: 'OBJECT_APPEARED',
+  class_name: 'person',
+  timestamp: 0,
+  confidence: 0.9,
+  metadata: {},
+  zone_id: null,
+  line_id: null,
+}
+
 describe('LiveView', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -90,5 +112,48 @@ describe('LiveView', () => {
     render(<LiveView cameras={[]} selectedCameraId={null} onSelectCamera={vi.fn()} />)
 
     expect(screen.getByText(/No cameras registered/i)).toBeInTheDocument()
+  })
+
+  // Regression test for the item-1 bug: useCameraScene reset `video` and
+  // `trajectories` synchronously on a camera switch, but left `events`,
+  // `zones`, and `lines` holding the PREVIOUS camera's values until the new
+  // fetch resolved -- so those three stayed stale (and inconsistent with the
+  // rest of the page, which had already moved on) for as long as the new
+  // camera's request was in flight.
+  it('does not show the previous camera\'s zones/lines/events while the new camera\'s data is still loading', async () => {
+    vi.spyOn(api, 'listCameraZones').mockResolvedValueOnce([mockZone])
+    vi.spyOn(api, 'listCameraLines').mockResolvedValueOnce([mockLine])
+    vi.spyOn(api, 'listCameraEvents').mockResolvedValueOnce([mockEvent])
+
+    const { rerender } = render(
+      <LiveView cameras={[mockCamera, otherCamera]} selectedCameraId="demo" onSelectCamera={vi.fn()} />,
+    )
+
+    await waitFor(() => expect(screen.getByText('Zones').nextSibling).toHaveTextContent('1'))
+    expect(screen.getByText('Lines').nextSibling).toHaveTextContent('1')
+    expect(screen.getByText('Events').nextSibling).toHaveTextContent('1')
+
+    // Switch cameras, holding the new camera's video fetch open so we can
+    // inspect state in the window between the switch and the new data
+    // actually arriving.
+    let resolveVideos: (videos: api.Video[]) => void = () => {}
+    vi.spyOn(api, 'listVideos').mockReturnValueOnce(
+      new Promise<api.Video[]>((resolve) => {
+        resolveVideos = resolve
+      }),
+    )
+
+    rerender(
+      <LiveView cameras={[mockCamera, otherCamera]} selectedCameraId="demo-trafficlight" onSelectCamera={vi.fn()} />,
+    )
+
+    // Immediately after switching -- before the new camera's fetch resolves
+    // -- nothing should still show camera "demo"'s zone/line/event counts.
+    expect(screen.getByText('Zones').nextSibling).toHaveTextContent('0')
+    expect(screen.getByText('Lines').nextSibling).toHaveTextContent('0')
+    expect(screen.getByText('Events').nextSibling).toHaveTextContent('0')
+
+    resolveVideos([mockVideo])
+    await waitFor(() => expect(api.listCameraZones).toHaveBeenCalledWith('demo-trafficlight'))
   })
 })

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import type { Line, TraceEvent, Trajectory, Zone } from '@/lib/api'
-import { findNearestPoint, getObjectViolationState } from '@/lib/overlay'
+import { computePixelSpeed, findNearestPoint, getObjectViolationState } from '@/lib/overlay'
 import type { ViolationState } from '@/lib/overlay'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +27,29 @@ const STATE_CLASSES: Record<ViolationState, string> = {
   normal: 'stroke-accent fill-accent/10',
   warning: 'stroke-warning fill-warning/15',
   danger: 'stroke-danger fill-danger/15',
+}
+
+/** Soft outer glow per state, keyed to the same token the stroke already
+ * uses -- referencing the CSS variable (not a literal hex) so this stays a
+ * theme value, not a hardcoded color. */
+const STATE_GLOW: Record<ViolationState, string> = {
+  normal: 'drop-shadow-[0_0_3px_var(--color-accent)]',
+  warning: 'drop-shadow-[0_0_3px_var(--color-warning)]',
+  danger: 'drop-shadow-[0_0_4px_var(--color-danger)]',
+}
+
+/** Tag chip border (on the background rect) and text color (on the label
+ * itself) per state -- same semantic mapping as STATE_CLASSES, just split
+ * since the rect and the text need different fill/stroke roles. */
+const STATE_LABEL_BORDER: Record<ViolationState, string> = {
+  normal: 'stroke-accent/40',
+  warning: 'stroke-warning/40',
+  danger: 'stroke-danger/40',
+}
+const STATE_LABEL_TEXT: Record<ViolationState, string> = {
+  normal: 'fill-accent',
+  warning: 'fill-warning',
+  danger: 'fill-danger',
 }
 
 const TRAIL_WINDOW_SECONDS = 3
@@ -88,7 +111,7 @@ export function VideoOverlay({
           y1={line.start[1]}
           x2={line.end[0]}
           y2={line.end[1]}
-          className="stroke-accent"
+          className="stroke-accent drop-shadow-[0_0_3px_var(--color-accent)]"
           strokeWidth={3}
         />
       ))}
@@ -99,12 +122,18 @@ export function VideoOverlay({
         const trail = trajectory.points.filter(
           (point) => point.timestamp <= currentTime && currentTime - point.timestamp <= TRAIL_WINDOW_SECONDS,
         )
+        // Real, already-available pixel-space speed (px/s) from the delta
+        // between this object's two most recent trajectory points -- see
+        // computePixelSpeed's own comment for why this stays pixel space
+        // rather than claiming a real-world m/s or km/h figure.
+        const pixelSpeed = computePixelSpeed(trajectory.points, currentTime)
 
         return (
           <g
             key={trajectory.object_id}
             className={cn(
               STATE_CLASSES[state],
+              STATE_GLOW[state],
               'transition-colors duration-200 ease-out',
               onSelectObject && 'pointer-events-auto cursor-pointer',
             )}
@@ -123,14 +152,26 @@ export function VideoOverlay({
                 : undefined
             }
           >
-            {trail.length > 1 && (
-              <polyline
-                points={trail.map((point) => `${point.x},${point.y}`).join(' ')}
-                fill="none"
-                strokeWidth={2}
-                opacity={0.6}
-              />
-            )}
+            {/* Trajectory tail as individually-faded segments (newest near
+                full opacity, oldest fading toward the trail window's edge)
+                rather than one flat-opacity polyline. */}
+            {trail.length > 1 &&
+              trail.slice(1).map((point, i) => {
+                const previous = trail[i]
+                const age = currentTime - point.timestamp
+                const opacity = Math.max(0.08, 0.6 * (1 - age / TRAIL_WINDOW_SECONDS))
+                return (
+                  <line
+                    key={`trail-${trajectory.object_id}-${point.frame_id}`}
+                    x1={previous.x}
+                    y1={previous.y}
+                    x2={point.x}
+                    y2={point.y}
+                    strokeWidth={2}
+                    opacity={opacity}
+                  />
+                )
+              })}
 
             {nearest && (
               <>
@@ -140,16 +181,21 @@ export function VideoOverlay({
                     y={nearest.y_min}
                     width={nearest.x_max - nearest.x_min}
                     height={nearest.y_max - nearest.y_min}
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                   />
                 ) : (
-                  <circle cx={nearest.x} cy={nearest.y} r={6} strokeWidth={2} />
+                  <circle cx={nearest.x} cy={nearest.y} r={6} strokeWidth={1.5} />
                 )}
                 {(() => {
                   const labelX = nearest.x_min ?? nearest.x
                   const labelY = (nearest.y_min ?? nearest.y) - 8
-                  const label = `#${trajectory.object_id} ${trajectory.class_name}`
-                  const labelWidth = label.length * 7 + 10
+                  const label = [
+                    `#${trajectory.object_id} ${trajectory.class_name}`,
+                    pixelSpeed !== null ? `${Math.round(pixelSpeed)}px/s` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' • ')
+                  const labelWidth = label.length * 6.5 + 10
                   return (
                     <>
                       <rect
@@ -158,13 +204,14 @@ export function VideoOverlay({
                         width={labelWidth}
                         height={17}
                         rx={3}
-                        className="fill-primary/85 stroke-none"
+                        className={cn('fill-primary/85', STATE_LABEL_BORDER[state])}
+                        strokeWidth={1}
                       />
                       <text
                         x={labelX + 5}
                         y={labelY - 1}
-                        fontSize={12}
-                        className="fill-surface stroke-none font-medium font-mono"
+                        fontSize={11}
+                        className={cn('stroke-none font-medium font-mono tabular-nums', STATE_LABEL_TEXT[state])}
                       >
                         {label}
                       </text>

@@ -14,6 +14,9 @@ import { DemoScenariosModal } from '@/components/DemoScenariosModal'
 import { type DemoScenario } from '@/lib/demoScenarios'
 import { type SeekRequest } from '@/components/VideoPlayer'
 import { listCameras, type Camera } from '@/lib/api'
+import { useCameraScene } from '@/hooks/useCameraScene'
+import { classifyEventSeverity } from '@/lib/eventSeverity'
+import type { AgentEventRef } from '@/lib/agentInsights'
 
 const VIEW_METADATA: Record<ActiveView, { title: string; subtitle: string }> = {
   dashboard: {
@@ -105,6 +108,32 @@ function App() {
 
   const currentMeta = VIEW_METADATA[activeView] ?? VIEW_METADATA.dashboard
 
+  // The header's Operations Telemetry Strip reflects whatever camera is
+  // currently selected, regardless of which page is open -- fetched once
+  // here rather than reading it out of Dashboard/LiveView's own internal
+  // useCameraScene calls (those stay page-local; this is a separate fetch
+  // for the persistent header, same real data, one extra request per camera
+  // switch in exchange for not threading page-owned state up through props).
+  const headerScene = useCameraScene(selectedCameraId)
+  const criticalEvents = headerScene.events.filter((event) => classifyEventSeverity(event.event_type) === 'danger')
+  const criticalEvent = criticalEvents[criticalEvents.length - 1] ?? null
+
+  function handleSeekToCriticalEvent(timestamp: number) {
+    setActiveView('live')
+    setDemoSeekRequest({ time: timestamp, nonce: Date.now() })
+  }
+
+  // Vision Agent answers can reference events on ANY camera (its tools
+  // aren't scoped to whatever's currently selected in the UI), so replaying
+  // one also switches the selected camera before seeking -- unlike the
+  // header's critical-breach chip, which is always about the already-active
+  // camera.
+  function handleReplayAgentEvent(ref: AgentEventRef) {
+    setSelectedCameraId(ref.camera_id)
+    setActiveView('live')
+    setDemoSeekRequest({ time: ref.timestamp, nonce: Date.now() })
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground antialiased">
       {/* Desktop & Mobile Sidebar */}
@@ -114,6 +143,7 @@ function App() {
           onNavigate={(view) => setActiveView(view)}
           cameraCount={cameras.length}
           isApiConnected={isApiConnected}
+          criticalEventCount={criticalEvents.length}
         />
       </div>
 
@@ -133,6 +163,7 @@ function App() {
               }}
               cameraCount={cameras.length}
               isApiConnected={isApiConnected}
+              criticalEventCount={criticalEvents.length}
             />
           </div>
         </div>
@@ -150,6 +181,13 @@ function App() {
           onRefresh={fetchCameras}
           isRefreshing={isRefreshing}
           onOpenDemoModal={() => setIsDemoModalOpen(true)}
+          isApiConnected={isApiConnected}
+          onNavigateToCameras={() => setActiveView('cameras')}
+          targetsInFrame={selectedCameraId ? headerScene.trajectories.length : undefined}
+          criticalEventCount={criticalEvents.length}
+          onSeekToCriticalEvent={
+            criticalEvent ? () => handleSeekToCriticalEvent(criticalEvent.timestamp) : undefined
+          }
         />
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -211,7 +249,7 @@ function App() {
             />
           )}
           {activeView === 'alerts' && <AlertsView cameras={cameras} />}
-          {activeView === 'agent' && <VisionAgentView />}
+          {activeView === 'agent' && <VisionAgentView onReplayEvent={handleReplayAgentEvent} />}
           {activeView === 'evaluation' && <EvaluationView />}
         </main>
       </div>

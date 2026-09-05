@@ -41,6 +41,9 @@ export function useCameraScene(cameraId: string | null): CameraScene {
     setError(null)
     setVideo(null)
     setTrajectories([])
+    setEvents([])
+    setZones([])
+    setLines([])
 
     Promise.all([
       listVideos(cameraId),

@@ -1,9 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { IncidentCard } from '@/components/IncidentCard'
 import { queryAgent } from '@/lib/api'
-import type { AgentAnswer } from '@/lib/api'
-import { Bot, Wrench, ArrowUp } from 'lucide-react'
+import type { AgentAnswer, AgentToolCall } from '@/lib/api'
+import {
+  extractEventRefs,
+  formatToolCall,
+  parseAnswerBlocks,
+  parseInlineBold,
+  type AgentEventRef,
+} from '@/lib/agentInsights'
+import { Bot, Wrench, ChevronDown, CornerDownLeft, Loader2, Terminal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const EXAMPLE_QUERIES = [
@@ -23,18 +31,101 @@ interface Turn {
 
 let nextTurnId = 0
 
+interface VisionAgentViewProps {
+  /** Jumps to the Live page and seeks to this real event -- wired from
+   * App.tsx (same demoSeekRequest mechanism the header's critical-breach
+   * chip and demo scenarios already use). Omitted entirely when not
+   * provided rather than rendering a dead button. */
+  onReplayEvent?: (ref: AgentEventRef) => void
+}
+
+/** One real tool call the agent made this turn -- name and arguments are
+ * exactly what was sent, expandable to the exact JSON the tool returned. */
+function ToolCallPill({ call }: { call: AgentToolCall }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-fit items-center gap-1.5 rounded border border-border bg-surface-alt/60 px-2 py-1 font-mono text-[10px] text-ink-subtle hover:border-accent/40 hover:text-ink transition-colors"
+      >
+        <Wrench className="h-3 w-3 text-accent shrink-0" />
+        <span>{formatToolCall(call.name, call.arguments)}</span>
+        <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', expanded && 'rotate-180')} />
+      </button>
+      {expanded && (
+        <pre className="max-h-48 overflow-auto rounded border border-border bg-primary/60 p-2 font-mono text-[10px] text-ink-on-dark-quiet">
+          {JSON.stringify(call.result, null, 2)}
+        </pre>
+      )}
+    </div>
+  )
+}
+
+/** The agent's free-text answer, lightly formatted (paragraphs, bullet
+ * groups, **bold** spans) -- see lib/agentInsights.ts for exactly what this
+ * does and doesn't parse. */
+function AnswerText({ answer }: { answer: string }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {parseAnswerBlocks(answer).map((block, i) =>
+        block.type === 'paragraph' ? (
+          <p key={i} className="text-sm text-ink leading-relaxed">
+            {parseInlineBold(block.text).map((seg, j) =>
+              seg.bold ? (
+                <strong key={j} className="font-semibold text-ink">
+                  {seg.text}
+                </strong>
+              ) : (
+                <span key={j}>{seg.text}</span>
+              ),
+            )}
+          </p>
+        ) : (
+          <ul key={i} className="flex flex-col gap-0.5 pl-4 text-sm text-ink list-disc marker:text-ink-subtle">
+            {block.items.map((item, j) => (
+              <li key={j} className="leading-relaxed">
+                {parseInlineBold(item).map((seg, k) =>
+                  seg.bold ? (
+                    <strong key={k} className="font-semibold text-ink">
+                      {seg.text}
+                    </strong>
+                  ) : (
+                    <span key={k}>{seg.text}</span>
+                  ),
+                )}
+              </li>
+            ))}
+          </ul>
+        ),
+      )}
+    </div>
+  )
+}
+
 /**
  * Ask TRACE: a real entry point to the Section 12 Vision Agent (POST
  * /agent/query), not a placeholder or a generic chat UI. Every answer is
  * grounded in real tool calls over the same data every other view reads
- * (src/agent/tools.py) -- shown alongside the answer for transparency, per
- * the API's own AgentToolCallRead design. If no LLM API key is configured
- * in this environment, the backend returns a real 503 with a clear detail
- * message (src/api/deps.py); that is shown honestly, not hidden or faked.
+ * (src/agent/tools.py), shown alongside the answer for transparency --
+ * expandable to the real JSON each tool returned, and (when a tool's result
+ * carried real events) as clickable incident chips that jump straight to
+ * that moment on the Live page. If no LLM API key is configured in this
+ * environment, the backend returns a real 503 with a clear detail message
+ * (src/api/deps.py); that is shown honestly, not hidden or faked.
  */
-export function VisionAgentView() {
+export function VisionAgentView({ onReplayEvent }: VisionAgentViewProps) {
   const [input, setInput] = useState('')
   const [turns, setTurns] = useState<Turn[]>([])
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    // jsdom (this app's test environment) doesn't implement scrollTo --
+    // same category of gap as HTMLMediaElement.play in LiveView.test.tsx.
+    scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [turns])
 
   function ask(question: string) {
     const trimmed = question.trim()
@@ -53,82 +144,132 @@ export function VisionAgentView() {
   }
 
   return (
-    <div className="flex flex-col gap-4 max-w-3xl">
+    <div className="flex flex-col gap-3 max-w-4xl mx-auto w-full">
       <div className="flex items-center gap-2">
-        <Bot className="h-4 w-4 text-accent" />
-        <span className="text-sm font-semibold text-ink">Ask TRACE</span>
+        <Terminal className="h-4 w-4 text-accent" />
+        <span className="text-sm font-semibold text-ink">Vision Agent</span>
         <span className="rounded bg-accent/15 px-1.5 py-0.2 text-[9px] font-mono text-secondary">AI</span>
+        <span className="text-[11px] text-ink-subtle">
+          Grounded in real tool calls over TRACE's stored data -- never a guess
+        </span>
       </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          ask(input)
-        }}
-        className="flex items-center gap-2"
-      >
-        <Input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about tracked objects, events, zones, or traffic…"
-          className="flex-1"
-        />
-        <Button type="submit" size="icon-sm" disabled={!input.trim()} aria-label="Ask">
-          <ArrowUp className="h-4 w-4" />
-        </Button>
-      </form>
-
-      {turns.length === 0 && (
-        <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">Example queries</span>
-          <div className="flex flex-col gap-1.5">
-            {EXAMPLE_QUERIES.map((query) => (
-              <button
-                key={query}
-                type="button"
-                onClick={() => ask(query)}
-                className="w-fit rounded-md border border-border bg-surface px-3 py-1.5 text-left text-xs text-ink-quiet hover:border-accent hover:text-ink transition-colors"
-              >
-                {query}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-3">
-        {turns.map((turn) => (
-          <div key={turn.id} className="rounded-lg border border-border bg-surface overflow-hidden">
-            <div className="border-b border-border/50 bg-surface-alt/40 px-3.5 py-2 text-xs font-medium text-ink">
-              {turn.question}
+      <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-2xs">
+        <div ref={scrollRef} className="flex flex-col gap-4 overflow-y-auto p-4 min-h-[360px] max-h-[65vh]">
+          {turns.length === 0 && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-ink-subtle">
+                <Bot className="h-8 w-8 text-ink-disabled shrink-0" />
+                <p className="text-xs leading-relaxed">
+                  Ask a question about tracked objects, events, zones, lines, or traffic --
+                  every answer is backed by a real query against TRACE's own database, shown below it.
+                </p>
+              </div>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle mt-1">
+                Example queries
+              </span>
+              <div className="flex flex-col gap-1.5">
+                {EXAMPLE_QUERIES.map((query) => (
+                  <button
+                    key={query}
+                    type="button"
+                    onClick={() => ask(query)}
+                    className="flex w-fit items-center gap-1.5 rounded-md border border-border bg-surface-alt/40 px-3 py-1.5 text-left font-mono text-xs text-ink-quiet hover:border-accent hover:text-ink transition-colors"
+                  >
+                    <span className="text-accent">{'>'}</span>
+                    {query}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="px-3.5 py-2.5">
-              {turn.pending && <p className="text-xs text-ink-subtle">Reasoning over TRACE data…</p>}
-              {turn.error && <p className="text-xs text-danger">{turn.error}</p>}
-              {turn.answer && (
-                <div className="flex flex-col gap-2">
-                  <p className="text-sm text-ink">{turn.answer.answer}</p>
-                  {turn.answer.tool_calls.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <Wrench className="h-3 w-3 text-ink-subtle" />
-                      {turn.answer.tool_calls.map((call, j) => (
-                        <span
-                          key={j}
-                          className={cn(
-                            'rounded bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] text-ink-subtle',
-                          )}
-                        >
-                          {call.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+          )}
+
+          {turns.map((turn) => {
+            const eventRefs = turn.answer
+              ? dedupeEventRefs(turn.answer.tool_calls.flatMap((call) => extractEventRefs(call.result)))
+              : []
+
+            return (
+              <div key={turn.id} className="flex flex-col gap-2">
+                <div className="flex items-start gap-1.5 font-mono text-xs text-ink-quiet">
+                  <span className="text-accent shrink-0">{'>'}</span>
+                  <span>{turn.question}</span>
                 </div>
-              )}
-            </div>
-          </div>
-        ))}
+
+                {turn.pending && (
+                  <div className="flex items-center gap-1.5 pl-4 text-xs text-ink-subtle">
+                    <Loader2 className="h-3 w-3 animate-spin text-accent" />
+                    <span>Reasoning over TRACE data…</span>
+                  </div>
+                )}
+
+                {turn.error && (
+                  <div role="alert" className="ml-4 rounded-md border border-danger bg-danger/10 px-3 py-2 text-xs text-danger">
+                    {turn.error}
+                  </div>
+                )}
+
+                {turn.answer && (
+                  <div className="flex flex-col gap-2.5 pl-4 border-l-2 border-l-border">
+                    {turn.answer.tool_calls.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        {turn.answer.tool_calls.map((call, i) => (
+                          <ToolCallPill key={i} call={call} />
+                        ))}
+                      </div>
+                    )}
+
+                    <AnswerText answer={turn.answer.answer} />
+
+                    {eventRefs.length > 0 && (
+                      <div className="flex flex-col gap-1.5 rounded-md border border-border bg-surface-alt/30 overflow-hidden">
+                        <span className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">
+                          Related incidents ({eventRefs.length})
+                        </span>
+                        <div className="divide-y divide-border/30">
+                          {eventRefs.map((ref) => (
+                            <IncidentCard key={ref.id} event={ref} onSelect={onReplayEvent ? () => onReplayEvent(ref) : undefined} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            ask(input)
+          }}
+          className="flex items-center gap-2 border-t border-border bg-surface-alt/20 px-3 py-2.5"
+        >
+          <span className="font-mono text-sm text-accent shrink-0">{'>'}</span>
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask about tracked objects, events, zones, or traffic…"
+            className="flex-1 border-none bg-transparent font-mono text-sm shadow-none focus-visible:ring-0"
+          />
+          <Button type="submit" size="icon-sm" disabled={!input.trim()} aria-label="Ask">
+            <CornerDownLeft className="h-4 w-4" />
+          </Button>
+        </form>
       </div>
     </div>
   )
+}
+
+function dedupeEventRefs(refs: AgentEventRef[]): AgentEventRef[] {
+  const seen = new Set<number>()
+  const result: AgentEventRef[] = []
+  for (const ref of refs) {
+    if (seen.has(ref.id)) continue
+    seen.add(ref.id)
+    result.push(ref)
+  }
+  return result
 }

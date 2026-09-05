@@ -12,45 +12,50 @@
  */
 
 :root {
-  /* Brand */
-  --color-primary: #2f4157; /* darkest navy -- sidebar, header, primary nav, high-emphasis UI */
-  --color-secondary: #567c8e; /* buttons, active states, secondary emphasis */
-  --color-accent: #a2c1d1; /* chart accents, highlights, hover states */
-  --color-surface-alt: #e3ecf2; /* cards, subtle panel backgrounds */
-  --color-border: #c7d9e5; /* borders, dividers, secondary surfaces */
-  --color-background: #f3f6f9; /* main app background */
-  --color-surface: #ffffff; /* elevated surfaces (cards on top of background) */
+  /* Brand -- full replacement of the earlier light "blue-black + white +
+     baby blue" identity (#0a0e1a/#2d3f5c/#4a90c2/#eaf4fd/#d6e9f8/#ffffff) with
+     the confirmed "Tactical Cyber-Slate" dark identity: a near-black
+     operations console with a neon-cyan functional accent, built for
+     high-contrast video/spatial-overlay viewing rather than a paper-white
+     admin template. Do not reintroduce the old light values. */
+  --color-primary: #10141a; /* elevated dark layer -- sidebar, header, primary nav chrome */
+  --color-secondary: #0fb8c9; /* deep cyan-teal -- solid buttons, active states, secondary emphasis */
+  --color-accent: #00f0ff; /* neon cyan -- spatial tracking, chart accents, highlights, hover/focus glow */
+  --color-surface-alt: #161c28; /* subtle panel/hover tint, one step up from --color-surface */
+  --color-border: #1e2638; /* hairline borders, dividers, card edges */
+  --color-background: #090b0e; /* deep tactical black -- main app stage background */
+  --color-surface: #131822; /* card & panel background (elevated surfaces on top of background) */
 
   /* Semantic states -- reserved for event badges, alert toasts, status dots,
      and any chart series that specifically represents violations vs normal
      activity. Everything else (nav, buttons, cards, default chart series,
      borders) uses the brand palette above, not these. */
-  --color-success: #2e7d5b; /* e.g. line crossing resolved, system healthy */
-  --color-warning: #c58a24; /* e.g. approaching a threshold, degraded confidence */
-  --color-danger: #c94c4c; /* e.g. OVERSPEED, ZONE_ENTERED on a restricted zone, any violation */
-  --color-info: #567c8e; /* neutral informational states -- reuses brand secondary, not a new blue */
+  --color-success: #00e599; /* emerald/mint -- system health, resolved incidents */
+  --color-warning: #ffb703; /* amber/gold -- approaching a threshold, stationary/loitering */
+  --color-danger: #ff0055; /* crimson -- OVERSPEED, ZONE_ENTERED on a restricted zone, any violation */
+  --color-info: #5ea8c7; /* muted cyan-slate -- neutral informational states, deliberately less vivid
+     than --color-accent so a plain "info" badge never reads as an active tracking highlight */
 
   /*
-   * Text hierarchy ("ink" scale) -- every navy tint below is derived from
-   * --color-primary, NOT from --color-secondary. --color-secondary is a
-   * BRAND/interactive color (buttons, active nav, selected states); reusing
-   * it as a body-text color was the original bug -- it conflated "this is
-   * clickable/emphasized" with "this is quiet text," and it landed right at
-   * the legal contrast floor (~4.5:1) for a role that needed to be clearly
-   * readable, not merely passable. These four tiers are what components
-   * should reach for instead. Contrast ratios below are against
-   * --color-surface (#fff), computed with the WCAG relative-luminance
-   * formula -- re-check if either endpoint ever changes.
+   * Text hierarchy ("ink" scale) -- on a fully dark shell, --text-primary can
+   * no longer just alias --color-primary the way the light theme did (that
+   * only worked because the darkest brand tone doubled as the darkest
+   * possible text-on-white). --color-primary is now a dark SURFACE tone
+   * (sidebar chrome), which would be invisible as text on an equally-dark
+   * background -- so this tier gets its own literal light values instead.
+   * Ratios below are against --color-surface (#131822), computed with the
+   * WCAG relative-luminance formula -- re-check if either endpoint changes.
    */
-  --text-primary: #2f4157; /* = --color-primary. ~10.4:1. Headings, KPI values, high-emphasis body. */
-  --text-secondary: #47576a; /* ~7.4:1. The default body/UI text color -- nav labels, section titles, most copy. */
-  --text-tertiary: #636e81; /* ~5.2:1. De-emphasized metadata: timestamps, fine print, hints. Still always legible. */
-  --text-disabled: #8b95a2; /* ~3.0:1. Reserved for genuinely disabled controls only -- never for normal quiet text. */
+  --text-primary: #edf2f5; /* ~15.8:1. Headings, KPI values, high-emphasis body. */
+  --text-secondary: #9facbd; /* ~7.7:1. The default body/UI text color -- nav labels, section titles, most copy. */
+  --text-tertiary: #7c879a; /* ~4.9:1. De-emphasized metadata: timestamps, fine print, hints. Still always legible. */
+  --text-disabled: #5a6478; /* ~3.0:1. Reserved for genuinely disabled controls only -- never for normal quiet text. */
 
   /* Same four-tier idea, for the sidebar/HUD surfaces that sit on
-     --color-primary (navy) instead of --color-surface (white). Ratios below
-     are against #2f4157. */
-  --text-on-dark: #ffffff; /* ~10.4:1. Wordmark, active nav label, high-emphasis text on navy. */
-  --text-on-dark-quiet: #d5d9dd; /* ~7.4:1. Default nav-label/body text on navy. */
-  --text-on-dark-subtle: #b6bdc4; /* ~5.5:1. De-emphasized captions on navy (section eyebrows, footnotes). */
+     --color-primary (#10141a) instead of --color-surface. Slightly higher
+     contrast than the tier above since --color-primary is a touch darker
+     than --color-surface. */
+  --text-on-dark: #f5fafb; /* ~17.6:1. Wordmark, active nav label, high-emphasis text on chrome. */
+  --text-on-dark-quiet: #aebacb; /* ~9.4:1. Default nav-label/body text on chrome. */
+  --text-on-dark-subtle: #727e8f; /* ~4.5:1. De-emphasized captions on chrome (section eyebrows, footnotes). */
 }

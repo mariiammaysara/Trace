@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { EventBadge } from '@/components/EventBadge'
 import { Button } from '@/components/ui/button'
 import type { TraceEvent } from '@/lib/api'
-import { ArrowRight, BellRing, Sparkles, X } from 'lucide-react'
+import { ArrowRight, BellRing, X } from 'lucide-react'
 
 interface LiveIncidentBannerProps {
   currentTime: number
@@ -52,44 +52,32 @@ export function LiveIncidentBanner({
     <div
       role="region"
       aria-label="Real-time event notification"
-      className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 rounded-lg border border-accent/60 bg-primary/95 px-4 py-2.5 shadow-2xl backdrop-blur-md text-ink-on-dark animate-in fade-in-0 slide-in-from-bottom-2 duration-150 max-w-lg w-[90%]"
+      title={activeScenarioTitle ?? undefined}
+      className="absolute bottom-3 left-3 z-30 flex max-w-[min(90%,20rem)] items-center gap-2 rounded-md border border-accent/60 bg-primary/95 px-2 py-1.5 shadow-xl backdrop-blur-md text-ink-on-dark animate-in fade-in-0 slide-in-from-bottom-2 duration-150"
     >
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent/20 text-accent">
-        <BellRing className="h-4 w-4 motion-safe:animate-bounce" />
-      </div>
+      <BellRing className="h-3.5 w-3.5 shrink-0 text-accent motion-safe:animate-bounce" />
 
-      <div className="flex flex-col min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-accent">
-            Live Event Fired
-          </span>
-          <span className="text-[10px] font-mono text-ink-on-dark-quiet">
-            t={activeFiredEvent.timestamp.toFixed(2)}s
-          </span>
-          {activeScenarioTitle && (
-            <span className="hidden sm:inline-flex items-center gap-1 rounded bg-white/10 px-1.5 py-0.2 text-[9px] font-medium text-ink-on-dark-subtle">
-              <Sparkles className="h-2.5 w-2.5 text-accent" />
-              {activeScenarioTitle}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 mt-0.5">
+      <div className="flex min-w-0 flex-col leading-tight">
+        <div className="flex items-center gap-1 min-w-0">
           <EventBadge eventType={activeFiredEvent.event_type} />
-          <span className="text-xs text-ink-on-dark truncate">
-            Target: <strong className="font-mono">#{activeFiredEvent.object_id} {activeFiredEvent.class_name}</strong>
+          <span className="truncate font-mono text-[11px] text-ink-on-dark">
+            #{activeFiredEvent.object_id} {activeFiredEvent.class_name}
           </span>
         </div>
+        <span className="text-[9px] font-mono text-ink-on-dark-subtle">
+          t={activeFiredEvent.timestamp.toFixed(2)}s
+        </span>
       </div>
 
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex items-center gap-1 shrink-0">
         <Button
           type="button"
-          size="xs"
+          size="icon-xs"
           onClick={() => onInvestigateEvent(activeFiredEvent.id)}
-          className="h-7 bg-accent hover:bg-accent/90 text-primary font-semibold text-[11px] gap-1 px-2.5 shadow-xs"
+          aria-label="Investigate this event"
+          title="Investigate"
+          className="h-6 w-6 bg-accent hover:bg-accent/90 text-primary shadow-xs"
         >
-          <span>Investigate</span>
           <ArrowRight className="h-3 w-3" />
         </Button>
 

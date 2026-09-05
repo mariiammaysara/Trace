@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findNearestPoint, getObjectViolationState } from './overlay'
+import { computePixelSpeed, findNearestPoint, getObjectViolationState } from './overlay'
 import type { TraceEvent, TrackPoint } from './api'
 
 function makeEvent(overrides: Partial<TraceEvent>): TraceEvent {
@@ -75,5 +75,33 @@ describe('findNearestPoint', () => {
 
   it('returns null for an empty points list', () => {
     expect(findNearestPoint([], 1)).toBeNull()
+  })
+})
+
+describe('computePixelSpeed', () => {
+  it('computes real pixel-space speed from the two most recent points', () => {
+    const points = [
+      makePoint({ timestamp: 0, x: 0, y: 0 }),
+      makePoint({ timestamp: 1, x: 3, y: 4 }), // distance 5px over 1s
+    ]
+    expect(computePixelSpeed(points, 1)).toBe(5)
+  })
+
+  it('is order-independent -- sorts points by timestamp first', () => {
+    const points = [
+      makePoint({ timestamp: 1, x: 3, y: 4 }),
+      makePoint({ timestamp: 0, x: 0, y: 0 }),
+    ]
+    expect(computePixelSpeed(points, 1)).toBe(5)
+  })
+
+  it('returns null for the first point (nothing to diff against)', () => {
+    const points = [makePoint({ timestamp: 0, x: 0, y: 0 })]
+    expect(computePixelSpeed(points, 0)).toBeNull()
+  })
+
+  it('returns null when nothing is tracked near the given time', () => {
+    const points = [makePoint({ timestamp: 0, x: 0, y: 0 }), makePoint({ timestamp: 1, x: 3, y: 4 })]
+    expect(computePixelSpeed(points, 10)).toBeNull()
   })
 })

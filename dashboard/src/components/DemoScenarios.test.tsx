@@ -16,9 +16,6 @@ describe('Phase 20: Demo Scenarios Modal', () => {
     )
 
     expect(screen.getByText('Demo Scenarios')).toBeInTheDocument()
-    expect(screen.getByText('Restricted Area Perimeter Intrusion')).toBeInTheDocument()
-    expect(screen.getByText('Perimeter Tripwire Line Crossing')).toBeInTheDocument()
-    expect(screen.getByText('Object Localization & Persistent Tracking')).toBeInTheDocument()
     expect(screen.getByText('Street Corner Vehicle Line Crossing')).toBeInTheDocument()
     expect(screen.getByText(/Footprint transparency/i)).toBeInTheDocument()
   })
@@ -36,9 +33,9 @@ describe('Phase 20: Demo Scenarios Modal', () => {
     )
 
     const launchButtons = screen.getAllByRole('button', { name: /Launch Scenario/i })
-    expect(launchButtons.length).toBe(4)
+    expect(launchButtons.length).toBe(1)
 
-    // Launch the first scenario (Restricted Area Intrusion)
+    // Launch the only remaining scenario (Street Corner Vehicle Line Crossing)
     fireEvent.click(launchButtons[0])
 
     expect(handleLaunch).toHaveBeenCalledWith(DEMO_SCENARIOS[0])
@@ -97,10 +94,15 @@ describe('Phase 20: Live Incident Banner (In-Demo Real-Event Surfacing)', () => 
       />,
     )
 
-    expect(screen.getByRole('region', { name: /Real-time event notification/i })).toBeInTheDocument()
+    // Phase 21: redesigned as a compact corner HUD (item 3) -- event type,
+    // target, and timestamp stay visible text; the scenario title becomes a
+    // hover tooltip (title attribute) rather than its own visible badge, to
+    // keep the footprint small.
+    const notification = screen.getByRole('region', { name: /Real-time event notification/i })
+    expect(notification).toBeInTheDocument()
+    expect(notification).toHaveAttribute('title', 'Restricted Area Breach')
     expect(screen.getByText('ZONE_ENTERED')).toBeInTheDocument()
     expect(screen.getByText(/#1 person/i)).toBeInTheDocument()
-    expect(screen.getByText('Restricted Area Breach')).toBeInTheDocument()
 
     // Clicking Investigate calls handler with the real event id
     const investigateBtn = screen.getByRole('button', { name: /Investigate/i })

@@ -123,8 +123,10 @@ export function DemoScenariosModal({
                         }}
                         className={cn(
                           'gap-1.5 text-xs font-semibold px-3 h-8 shadow-xs',
+                          // text-surface here (not text-ink-on-dark): --color-secondary is a
+                          // bright/vivid tone in this theme, so this state needs dark text.
                           isActive
-                            ? 'bg-secondary text-ink-on-dark'
+                            ? 'bg-secondary text-surface'
                             : 'bg-primary hover:bg-primary/90 text-ink-on-dark',
                         )}
                       >

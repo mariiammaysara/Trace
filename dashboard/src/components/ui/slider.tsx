@@ -34,7 +34,11 @@ function Slider({
         >
           <SliderPrimitive.Indicator
             data-slot="slider-range"
-            className="bg-primary select-none data-horizontal:h-full data-vertical:w-full"
+            /* bg-[var(--primary)], not bg-primary: shadcn's own "--primary"
+               role (TRACE's --color-secondary, the button/action color) is
+               deliberately different from TRACE's brand "--color-primary"
+               utility -- see index.css's @theme inline comment. */
+            className="bg-[var(--primary)] select-none data-horizontal:h-full data-vertical:w-full"
           />
         </SliderPrimitive.Track>
         {Array.from({ length: _values.length }, (_, index) => (

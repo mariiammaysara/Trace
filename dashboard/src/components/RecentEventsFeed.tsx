@@ -1,17 +1,15 @@
 import { useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { EventBadge } from '@/components/EventBadge'
-import { ObjectIdLink } from '@/components/ObjectIdLink'
+import { IncidentCard } from '@/components/IncidentCard'
 import { Button } from '@/components/ui/button'
 import {
   AlertTriangle,
-  Clock,
   ChevronRight,
   Filter,
   Layers,
 } from 'lucide-react'
 import type { TraceEvent } from '@/lib/api'
-import { classifyEventSeverity } from '@/lib/eventSeverity'
+import { classifyEventSeverity, type EventSeverity } from '@/lib/eventSeverity'
 import { cn } from '@/lib/utils'
 
 interface RecentEventsFeedProps {
@@ -26,6 +24,11 @@ interface RecentEventsFeedProps {
 
 type FilterTier = 'all' | 'violations' | 'warnings'
 
+/** Sort weight for the default "All" view -- danger and warning events
+ * (real violations and notable-but-not-a-violation events) float above
+ * info-tier lifecycle noise (OBJECT_APPEARED/DISAPPEARED, ZONE_EXITED). */
+const SEVERITY_RANK: Record<EventSeverity, number> = { danger: 0, warning: 1, info: 2 }
+
 export function RecentEventsFeed({
   events,
   selectedEventId,
@@ -36,13 +39,20 @@ export function RecentEventsFeed({
 }: RecentEventsFeedProps) {
   const [activeFilter, setActiveFilter] = useState<FilterTier>('all')
 
-  const filteredEvents = events.filter((e) => {
-    if (activeFilter === 'all') return true
-    const severity = classifyEventSeverity(e.event_type)
-    if (activeFilter === 'violations') return severity === 'danger'
-    if (activeFilter === 'warnings') return severity === 'warning'
-    return true
-  })
+  const filteredEvents = events
+    .filter((e) => {
+      if (activeFilter === 'all') return true
+      const severity = classifyEventSeverity(e.event_type)
+      if (activeFilter === 'violations') return severity === 'danger'
+      if (activeFilter === 'warnings') return severity === 'warning'
+      return true
+    })
+    // Default grouping by severity (reusing eventSeverity.ts's own tiers, not
+    // a new ranking): danger and warning events float above the lifecycle
+    // noise (OBJECT_APPEARED/DISAPPEARED, ZONE_EXITED) that otherwise
+    // dominates a long event list. A stable sort keeps each tier's original
+    // (recency) order intact -- this only reorders across tiers.
+    .sort((a, b) => SEVERITY_RANK[classifyEventSeverity(a.event_type)] - SEVERITY_RANK[classifyEventSeverity(b.event_type)])
 
   const violationCount = events.filter((e) => classifyEventSeverity(e.event_type) === 'danger').length
   const warningCount = events.filter((e) => classifyEventSeverity(e.event_type) === 'warning').length
@@ -128,75 +138,15 @@ export function RecentEventsFeed({
             </p>
           </div>
         ) : (
-          filteredEvents.map((event) => {
-            const severity = classifyEventSeverity(event.event_type)
-            const isSelected = selectedEventId === event.id
-
-            return (
-              <div
-                key={event.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => onSelectEvent?.(event)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    onSelectEvent?.(event)
-                  }
-                }}
-                className={cn(
-                  'group flex items-center justify-between px-3.5 py-2 transition-colors text-left cursor-pointer select-none',
-                  'hover:bg-surface-alt/50 focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2',
-                  isSelected && 'bg-accent/10 border-l-2 border-l-accent',
-                  !isSelected && severity === 'danger' && 'bg-danger/5 border-l-2 border-l-danger',
-                  !isSelected && severity === 'warning' && 'border-l-2 border-l-warning',
-                  !isSelected && severity === 'info' && 'border-l-2 border-l-transparent',
-                )}
-              >
-                <div className="flex items-start gap-2 min-w-0">
-                  <div className="flex flex-col gap-0.5 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <EventBadge eventType={event.event_type} />
-                      <span className="text-xs font-mono font-medium text-ink">
-                        <ObjectIdLink objectId={event.object_id} onSelectObject={onSelectObject} /> {event.class_name}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-[11px] text-ink-subtle">
-                      <span className="flex items-center gap-0.5 font-mono tabular-nums">
-                        <Clock className="h-2.5 w-2.5 text-ink-subtle" />
-                        {event.timestamp.toFixed(1)}s
-                      </span>
-                      {event.zone_id && (
-                        <span className="rounded bg-surface-alt px-1 py-0.2 text-[9px] font-mono text-ink-subtle">
-                          {event.zone_id}
-                        </span>
-                      )}
-                      {event.line_id && (
-                        <span className="rounded bg-surface-alt px-1 py-0.2 text-[9px] font-mono text-ink-subtle">
-                          {event.line_id}
-                        </span>
-                      )}
-                      {typeof event.metadata?.speed === 'number' && (
-                        <span className="font-mono text-danger font-semibold">
-                          {Math.round(event.metadata.speed as number)} km/h
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 pl-2 shrink-0">
-                  <span className="text-[10px] font-mono text-ink-subtle tabular-nums">
-                    {Math.round(event.confidence * 100)}%
-                  </span>
-                  <div className="flex h-5 w-5 items-center justify-center rounded bg-surface-alt text-ink-subtle opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ChevronRight className="h-3 w-3" />
-                  </div>
-                </div>
-              </div>
-            )
-          })
+          filteredEvents.map((event) => (
+            <IncidentCard
+              key={event.id}
+              event={event}
+              isSelected={selectedEventId === event.id}
+              onSelect={onSelectEvent}
+              onSelectObject={onSelectObject}
+            />
+          ))
         )}
       </CardContent>
 

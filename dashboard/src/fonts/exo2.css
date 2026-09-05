@@ -1,0 +1,18 @@
+/*
+ * Exo 2 -- self-hosted from Google Fonts' source repo (google/fonts,
+ * ofl/exo2/Exo2[wght].ttf), converted to WOFF2 locally rather than pulled
+ * from fonts.googleapis.com at request time. Served from public/fonts/exo2/
+ * so it ships with the app instead of depending on a live Google CDN call.
+ *
+ * It's a single variable-font file covering the whole wght axis (100-900),
+ * so one @font-face with font-weight: 100 900 covers Regular/Medium/Bold
+ * (400/500/700) -- no separate per-weight files needed. Matches how
+ * @fontsource-variable/geist is already served in this project.
+ */
+@font-face {
+  font-family: 'Exo 2 Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/exo2/Exo2-Variable.woff2') format('woff2-variations');
+}

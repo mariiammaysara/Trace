@@ -96,3 +96,34 @@ export function findNearestPoint(
 
   return nearest !== null && nearestDelta <= maxDelta ? nearest : null
 }
+
+/**
+ * Instantaneous pixel-space speed (px/s) of one tracked object at the given
+ * playback time, from the real delta between its two most recent consecutive
+ * trajectory points -- never estimated or fabricated. Deliberately pixel
+ * space, not a real-world unit: converting to m/s or km/h would need the
+ * camera's own metric homography, and most of TRACE's camera configs
+ * (configs/cameras/*.json) only carry an ILLUSTRATIVE/placeholder
+ * homography with no real-world survey behind it (see those files' own
+ * comments) -- reporting a fake "real-world" speed off a placeholder scale
+ * would be exactly the kind of fabricated precision this project avoids
+ * elsewhere (e.g. why OVERSPEED is never claimed for those cameras).
+ * Returns null when there's no prior point to diff against (the object just
+ * appeared) or nothing was tracked near this timestamp.
+ */
+export function computePixelSpeed(points: TrackPoint[], currentTime: number, maxDelta = 0.25): number | null {
+  const sorted = [...points].sort((a, b) => a.timestamp - b.timestamp)
+  const nearest = findNearestPoint(sorted, currentTime, maxDelta)
+  if (!nearest) return null
+
+  const index = sorted.indexOf(nearest)
+  const previous = sorted[index - 1]
+  if (!previous) return null
+
+  const dt = nearest.timestamp - previous.timestamp
+  if (dt <= 0) return null
+
+  const dx = nearest.x - previous.x
+  const dy = nearest.y - previous.y
+  return Math.sqrt(dx * dx + dy * dy) / dt
+}

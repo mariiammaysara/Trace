@@ -160,7 +160,7 @@ export function VideoPlayer({
         className={
           mediaError
             ? 'group relative w-full overflow-hidden rounded-lg border border-border bg-primary h-[200px] flex items-center justify-center shadow-xs'
-            : 'group relative w-full overflow-hidden rounded-lg border border-border bg-primary aspect-video max-h-[460px] flex items-center justify-center shadow-xs'
+            : 'group relative w-full overflow-hidden rounded-lg border border-border bg-primary aspect-video max-h-[70vh] flex items-center justify-center shadow-xs'
         }
       >
         <video
@@ -205,6 +205,15 @@ export function VideoPlayer({
 
         {!mediaError && (
           <>
+            {/* Tactical corner reticle -- purely decorative framing, no data
+                dependency, marking the frame as an active sensor feed. */}
+            <div className="pointer-events-none absolute inset-3 z-10">
+              <span className="absolute top-0 left-0 h-4 w-4 border-t-2 border-l-2 border-accent/70" />
+              <span className="absolute top-0 right-0 h-4 w-4 border-t-2 border-r-2 border-accent/70" />
+              <span className="absolute bottom-0 left-0 h-4 w-4 border-b-2 border-l-2 border-accent/70" />
+              <span className="absolute bottom-0 right-0 h-4 w-4 border-b-2 border-r-2 border-accent/70" />
+            </div>
+
             {/* HUD Overlay: Top Left Telemetry */}
             <div className="pointer-events-none absolute top-3 left-3 flex items-center gap-2 z-10">
               <div className="flex items-center gap-1.5 rounded bg-primary/80 backdrop-blur-xs px-2 py-1 font-mono text-[11px] text-ink-on-dark border border-white/10 shadow-xs">

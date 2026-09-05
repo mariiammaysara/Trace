@@ -60,8 +60,13 @@ services:
       TRACE_LOG_LEVEL: ${TRACE_LOG_LEVEL:-INFO}
       TRACE_DETECTOR_WEIGHTS: ${TRACE_DETECTOR_WEIGHTS:-yolov8n.pt}
       TRACE_DETECTOR_CONFIDENCE: ${TRACE_DETECTOR_CONFIDENCE:-0.25}
-      TRACE_CAMERA_SOURCE: ${TRACE_CAMERA_SOURCE:-data/sample.mp4}
-      TRACE_CAMERA_ID: ${TRACE_CAMERA_ID:-demo}
+      # camera "demo" (data/sample.mp4) was real webcam footage of an
+      # identifiable person -- removed from disk for privacy (see git log).
+      # demo-trafficlight (real, non-personal stock street footage) is now
+      # the default; it's the only other camera with a real, fully-working
+      # demo scenario (Section 4/8).
+      TRACE_CAMERA_SOURCE: ${TRACE_CAMERA_SOURCE:-data/demo_trafficlight.mp4}
+      TRACE_CAMERA_ID: ${TRACE_CAMERA_ID:-demo-trafficlight}
       TRACE_NUM_FRAMES: ${TRACE_NUM_FRAMES:-}
       # Every camera shipped here (configs/cameras/*.json) has an explicitly
       # placeholder/illustrative homography, not a real survey -- so OVERSPEED

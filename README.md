@@ -331,7 +331,7 @@ The operator dashboard is built with **React 19**, **Vite**, and **Tailwind CSS 
 
 - **Synchronized SVG Overlays**: Telemetry projected dynamically over `<video>` elements via `requestAnimationFrame` without altering source video.
 - **Sub-Second Incident Seek**: Click any event card to immediately seek the video player to that exact millisecond.
-- **Interactive Demo Scenarios**: 4 pre-recorded real-footage scenarios (Perimeter Intrusion, Tripwire Crossing, Object Lifecycle, Street Corner Vehicle Line Crossing).
+- **Interactive Demo Scenarios**: 1 pre-recorded real-footage scenario (Street Corner Vehicle Line Crossing, camera `demo-trafficlight`). Three earlier scenarios ran on camera `demo`'s personal webcam footage, which has been removed for privacy along with its database records.
 - **100% Data Integrity**: All telemetry cards, graphs, and trajectory inspectors query live PostgreSQL/FastAPI records without mock placeholders.
 
 ---
@@ -457,7 +457,7 @@ npm run dev                     # Available at http://localhost:5173
 ### 3. Video Pipeline Execution
 ```bash
 # Process a video file and stream trajectory points to database
-python scripts/persist_video.py data/sample.mp4 --camera-id demo
+python scripts/persist_video.py data/demo_trafficlight.mp4 --camera-id demo-trafficlight
 ```
 
 ---
@@ -469,8 +469,8 @@ python scripts/persist_video.py data/sample.mp4 --camera-id demo
 | `DATABASE_URL` | `postgresql://trace:trace@localhost:5433/trace` | PostgreSQL connection string |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` | `trace` / `trace` | Database credentials |
 | `TRACE_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | CORS allowed origins |
-| `TRACE_CAMERA_SOURCE` | `data/sample.mp4` | Video file path or RTSP camera stream URL |
-| `TRACE_CAMERA_ID` | `demo` | Active camera calibration config ID |
+| `TRACE_CAMERA_SOURCE` | `data/demo_trafficlight.mp4` | Video file path or RTSP camera stream URL |
+| `TRACE_CAMERA_ID` | `demo-trafficlight` | Active camera calibration config ID |
 | `TRACE_DETECTOR_WEIGHTS` | `yolov8n.pt` | Model checkpoint path or identifier |
 | `TRACE_DETECTOR_CONFIDENCE` | `0.25` | Minimum object detection confidence |
 | `TRACE_LLM_PROVIDER` | `anthropic` | Vision Agent LLM backend: `anthropic` or `openrouter` (Section 9) |
@@ -501,10 +501,10 @@ Interactive OpenAPI documentation and live request runner are available at: **`h
 
 ### Example Payloads
 
-#### 1. Real-Time Analytics (`GET /analytics?camera_id=demo`)
+#### 1. Real-Time Analytics (`GET /analytics?camera_id=demo-trafficlight`)
 ```json
 {
-  "camera_id": "demo",
+  "camera_id": "demo-trafficlight",
   "object_count": 148,
   "line_crossing_count": 42,
   "zone_violation_count": 7,

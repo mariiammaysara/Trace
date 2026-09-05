@@ -4,8 +4,29 @@ import { RecentEventsFeed } from '@/components/RecentEventsFeed'
 import { useCameraScene } from '@/hooks/useCameraScene'
 import type { Camera, TraceEvent } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { Sparkles, Layers, VideoOff, Video, Shapes, Minus } from 'lucide-react'
+import { Sparkles, Layers, VideoOff, Video, Shapes, Minus, AlertTriangle, Scan } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+
+/** One cell of the telemetry strip above the video -- every value here is
+ * real, already-fetched data (never estimated), see LiveView's own stats
+ * for what backs each one. */
+function TelemetryStat({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Layers
+  label: string
+  value: number
+}) {
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1.5">
+      <Icon className="h-3 w-3 text-ink-subtle shrink-0" />
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">{label}</span>
+      <span className="font-mono text-sm font-semibold tabular-nums text-ink">{value}</span>
+    </div>
+  )
+}
 
 interface LiveViewProps {
   cameras: Camera[]
@@ -52,6 +73,14 @@ export function LiveView({
     setInternalSeekRequest({ time: event.timestamp, nonce: Date.now() })
   }
 
+  // Real per-frame detection count -- the sum of every tracked object's own
+  // point history, i.e. how many actual bounding boxes the detector produced
+  // for this camera, not an estimate. Processing FPS is deliberately not
+  // shown here: the backend doesn't compute or expose a live per-camera FPS/
+  // latency figure anywhere the frontend can read (see CamerasView.tsx's own
+  // note on this), so surfacing one would mean fabricating it.
+  const detectionCount = trajectories.reduce((sum, t) => sum + t.points.length, 0)
+
   return (
     <div className="flex flex-col gap-4 max-w-[1600px] mx-auto w-full">
       {error && (
@@ -67,66 +96,51 @@ export function LiveView({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 items-start">
-          {/* Camera switcher rail */}
-          <div className="lg:col-span-2 flex flex-row gap-2 overflow-x-auto lg:flex-col lg:overflow-visible">
-            {cameras.map((camera) => {
-              const isActive = camera.camera_id === selectedCameraId
-              return (
-                <button
-                  key={camera.camera_id}
-                  type="button"
-                  onClick={() => onSelectCamera(camera.camera_id)}
-                  aria-current={isActive ? 'true' : undefined}
-                  className={cn(
-                    'flex shrink-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors',
-                    'focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1',
-                    isActive
-                      ? 'border-accent bg-accent/10'
-                      : 'border-border bg-surface hover:bg-surface-alt/50',
-                  )}
-                >
-                  <div className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-alt text-ink-subtle">
-                    <Video className="h-3 w-3" />
-                    {isActive && (
-                      <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                        <span className="motion-safe:absolute motion-safe:inline-flex h-full w-full motion-safe:animate-ping rounded-full bg-success opacity-75" />
-                        <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
-                      </span>
+          {/* Video workspace -- the dominant column. The full-card camera
+              rail that used to sit in its own 2-column strip is now a
+              compact pill row above the telemetry strip: the same switching
+              capability (name, live indicator, click-to-select), just not
+              spending a whole always-visible column on it, so the video
+              below gets that width back. */}
+          <div className="lg:col-span-9 flex flex-col gap-3">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+              {cameras.map((camera) => {
+                const isActive = camera.camera_id === selectedCameraId
+                return (
+                  <button
+                    key={camera.camera_id}
+                    type="button"
+                    onClick={() => onSelectCamera(camera.camera_id)}
+                    aria-current={isActive ? 'true' : undefined}
+                    title={camera.camera_id}
+                    className={cn(
+                      'flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                      'focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1',
+                      isActive
+                        ? 'border-accent bg-accent/10 text-ink'
+                        : 'border-border bg-surface text-ink-subtle hover:bg-surface-alt/50 hover:text-ink',
                     )}
-                  </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-semibold text-ink truncate">
-                      {camera.name ?? camera.camera_id}
+                  >
+                    <span className="relative flex h-1.5 w-1.5 shrink-0">
+                      {isActive && (
+                        <span className="motion-safe:absolute motion-safe:inline-flex h-full w-full motion-safe:animate-ping rounded-full bg-success opacity-75" />
+                      )}
+                      <span className={cn('relative inline-flex h-1.5 w-1.5 rounded-full', isActive ? 'bg-success' : 'bg-ink-disabled')} />
                     </span>
-                    <span className="text-[10px] font-mono text-ink-subtle truncate">
-                      {camera.camera_id}
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+                    <span className="max-w-[120px] truncate">{camera.name ?? camera.camera_id}</span>
+                  </button>
+                )
+              })}
+            </div>
 
-          {/* Video workspace */}
-          <div className="lg:col-span-7 flex flex-col gap-3">
             {/* Telemetry strip + Demo scenario action */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center divide-x divide-border rounded-md border border-border bg-surface shadow-2xs">
-                <div className="flex items-center gap-1.5 px-3 py-1.5">
-                  <Layers className="h-3 w-3 text-ink-subtle shrink-0" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">Tracks</span>
-                  <span className="font-mono text-sm font-semibold tabular-nums text-ink">{trajectories.length}</span>
-                </div>
-                <div className="flex items-center gap-1.5 px-3 py-1.5">
-                  <Shapes className="h-3 w-3 text-ink-subtle shrink-0" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">Zones</span>
-                  <span className="font-mono text-sm font-semibold tabular-nums text-ink">{zones.length}</span>
-                </div>
-                <div className="flex items-center gap-1.5 px-3 py-1.5">
-                  <Minus className="h-3 w-3 text-ink-subtle shrink-0" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-quiet">Lines</span>
-                  <span className="font-mono text-sm font-semibold tabular-nums text-ink">{lines.length}</span>
-                </div>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex flex-wrap items-center divide-x divide-border rounded-md border border-border bg-surface shadow-2xs">
+                <TelemetryStat icon={Layers} label="Tracks" value={trajectories.length} />
+                <TelemetryStat icon={Shapes} label="Zones" value={zones.length} />
+                <TelemetryStat icon={Minus} label="Lines" value={lines.length} />
+                <TelemetryStat icon={AlertTriangle} label="Events" value={events.length} />
+                <TelemetryStat icon={Scan} label="Detections" value={detectionCount} />
               </div>
 
               {onOpenDemoModal && (
