@@ -14,6 +14,11 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "pydantic>=2.6",
+    # Required for FastAPI's UploadFile/File/Form (POST /videos/upload) --
+    # not a transitive dep of anything else already listed here; omitting it
+    # doesn't fail at install time, only at first multipart request
+    # (RuntimeError: Form data requires "python-multipart" to be installed).
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

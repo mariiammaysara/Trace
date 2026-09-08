@@ -50,12 +50,42 @@ class Camera(Base):
 
 
 class Video(Base):
+    """status/total_frames/frames_processed/current_fps/error_message/
+    processing_started_at (added for the upload feature) only mean anything
+    for a video ingested through POST /videos/upload -- the worker's
+    persistent poll loop (scripts/upload_worker.py) is the only writer of
+    status transitions past "done". Every video created through the existing
+    paths (POST /videos, scripts/persist_video.py) defaults straight to
+    "done": those already ran the pipeline synchronously before the row
+    existed anywhere the frontend could see it, so there's no real pending/
+    processing state to represent for them.
+
+    IMPORTANT: added via a plain SQLAlchemy model change, not a migration --
+    this project has no migration tool (see database/db.py's create_all()
+    docstring). create_all() only creates missing TABLES, not missing
+    COLUMNS on an existing one, so an already-populated deployment's videos
+    table won't gain these columns automatically. See TRACE_STUDY_GUIDE.md's
+    note on this for the required full reset + re-seed.
+    """
+
     __tablename__ = "videos"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id"), nullable=False, index=True)
     path: Mapped[str] = mapped_column(String, nullable=False)
     started_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+
+    # pending -> processing -> done | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="done", index=True)
+    total_frames: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    frames_processed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Real mean FPS (frames_processed / elapsed wall-clock seconds since
+    # processing_started_at) -- same convention benchmarks/benchmark.py's
+    # own end_to_end_fps already uses. Null until processing has actually
+    # started.
+    current_fps: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    processing_started_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
 
     camera: Mapped["Camera"] = relationship(back_populates="videos")
 

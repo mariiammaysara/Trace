@@ -30,15 +30,20 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       TRACE_LLM_MODEL: ${TRACE_LLM_MODEL:-}
     volumes:
-      # Same bind mount as `worker` below -- GET /videos/{id}/stream resolves
-      # Video.path (e.g. "data/sample.mp4") relative to this container's own
-      # filesystem. Without this mount the path doesn't exist here even
-      # though `worker` (which wrote the row) can see it fine, so every
-      # /stream request 404s -- which the dashboard's <video> element then
-      # reports as error.code 4 ("codec isn't supported"), since Chrome maps
-      # any failed src response to MEDIA_ERR_SRC_NOT_SUPPORTED, not just a
-      # genuine decode failure.
-      - ./data:/app/data:ro
+      # Same bind mount as `worker`/`upload_worker` below -- GET
+      # /videos/{id}/stream resolves Video.path (e.g. "data/sample.mp4")
+      # relative to this container's own filesystem. Without this mount the
+      # path doesn't exist here even though `worker` (which wrote the row)
+      # can see it fine, so every /stream request 404s -- which the
+      # dashboard's <video> element then reports as error.code 4 ("codec
+      # isn't supported"), since Chrome maps any failed src response to
+      # MEDIA_ERR_SRC_NOT_SUPPORTED, not just a genuine decode failure.
+      #
+      # Read-write (not :ro like the other two services) -- POST
+      # /videos/upload writes the uploaded file to data/uploads/ from this
+      # container, which upload_worker then reads back (its own mount stays
+      # :ro since it never writes to data/).
+      - ./data:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -82,6 +87,29 @@ services:
       # provided video (e.g. data/sample.mp4) reaches the container without
       # ever being baked into it. Empty/missing on a fresh clone is expected;
       # see the README for how to provide your own.
+      - ./data:/app/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Persistent poll loop for POST /videos/upload -- distinct from `worker`
+  # above (which runs exactly one fixed, env-configured video and exits):
+  # this one never exits, and knows nothing about any specific camera. See
+  # scripts/upload_worker.py's module docstring for the full design
+  # rationale (Step 1's chosen approach: a DB status column + polling, no
+  # new infra like Redis/Celery).
+  upload_worker:
+    build: .
+    command: ["python", "scripts/upload_worker.py"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trace}:${POSTGRES_PASSWORD:-trace}@db:5432/${POSTGRES_DB:-trace}
+      TRACE_LOG_LEVEL: ${TRACE_LOG_LEVEL:-INFO}
+      TRACE_DETECTOR_WEIGHTS: ${TRACE_DETECTOR_WEIGHTS:-yolov8n.pt}
+      TRACE_DETECTOR_CONFIDENCE: ${TRACE_DETECTOR_CONFIDENCE:-0.25}
+      TRACE_UPLOAD_POLL_INTERVAL_SECONDS: ${TRACE_UPLOAD_POLL_INTERVAL_SECONDS:-2}
+    volumes:
+      # Read-only -- this container only ever reads the files `api` wrote to
+      # data/uploads/; it writes its results to Postgres, never to disk.
       - ./data:/app/data:ro
     depends_on:
       db:

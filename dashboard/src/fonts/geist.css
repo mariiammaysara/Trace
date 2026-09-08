@@ -1,0 +1,37 @@
+/*
+ * Geist Variable -- self-hosted from @fontsource-variable/geist's own
+ * `latin` subset file (files/geist-latin-wght-normal.woff2, unicode-range
+ * copied verbatim below), NOT pulled in via `@import "@fontsource-variable/
+ * geist"` like before.
+ *
+ * Root cause of the 404s that import produced in production: Tailwind v4's
+ * PostCSS plugin (@tailwindcss/postcss) inlines every @import in this file
+ * -- including a bare-specifier one resolving into node_modules -- before
+ * Vite's own CSS pipeline ever sees the file's true origin, so Vite's
+ * asset-URL rebasing loses track of where `./files/geist-latin-wght-
+ * normal.woff2` actually lives and leaves the literal relative path
+ * unrewritten in the emitted CSS (confirmed via `vite build`'s own warning:
+ * "referenced in ./files/... didn't resolve at build time"). It works in
+ * `npm run dev` only because Vite serves node_modules CSS through a
+ * different, non-bundled path there -- the failure is production-build-only,
+ * which is exactly why this had to be verified with a real `vite build`,
+ * not just `npm run dev`.
+ *
+ * Matches Exo 2's already-proven-working pattern (src/fonts/exo2.css) exactly:
+ * an absolute `/fonts/...` src url served from public/ bypasses Vite's CSS
+ * asset pipeline entirely (nothing to rebase -- the browser requests that
+ * exact path from whatever origin served the page), instead of depending on
+ * relative url() resolution through a multi-hop @import chain.
+ *
+ * Only the `latin` subset is kept (English-only UI) -- not the cyrillic/
+ * cyrillic-ext/vietnamese/latin-ext subsets @fontsource-variable/geist also
+ * ships, none of which this app's UI text ever needs.
+ */
+@font-face {
+  font-family: 'Geist Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/geist/Geist-Variable.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}

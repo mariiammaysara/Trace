@@ -11,12 +11,24 @@ import { VisionAgentView } from '@/components/VisionAgentView'
 import { EvaluationView } from '@/components/EvaluationView'
 import { ObjectProfilePanel } from '@/components/ObjectProfilePanel'
 import { DemoScenariosModal } from '@/components/DemoScenariosModal'
+import { type UploadEntry } from '@/components/RecentUploadsPanel'
 import { type DemoScenario } from '@/lib/demoScenarios'
 import { type SeekRequest } from '@/components/VideoPlayer'
-import { listCameras, type Camera } from '@/lib/api'
+import { listCameras, type Camera, type Video } from '@/lib/api'
 import { useCameraScene } from '@/hooks/useCameraScene'
 import { classifyEventSeverity } from '@/lib/eventSeverity'
 import type { AgentEventRef } from '@/lib/agentInsights'
+
+const RECENT_UPLOADS_STORAGE_KEY = 'trace.recentUploads'
+
+function loadStoredUploads(): UploadEntry[] {
+  try {
+    const raw = localStorage.getItem(RECENT_UPLOADS_STORAGE_KEY)
+    return raw ? (JSON.parse(raw) as UploadEntry[]) : []
+  } catch {
+    return []
+  }
+}
 
 const VIEW_METADATA: Record<ActiveView, { title: string; subtitle: string }> = {
   dashboard: {
@@ -73,6 +85,26 @@ function App() {
   const [isDemoModalOpen, setIsDemoModalOpen] = useState(false)
   const [activeScenario, setActiveScenario] = useState<DemoScenario | null>(null)
   const [demoSeekRequest, setDemoSeekRequest] = useState<SeekRequest | null>(null)
+
+  // Video upload feature: lifted above CamerasView (not local to it) and
+  // mirrored to localStorage so a real in-progress upload isn't lost either
+  // by switching tabs (CamerasView unmounts) or by a full page reload --
+  // each row still polls its own real status independently (RecentUploadsPanel).
+  const [uploads, setUploads] = useState<UploadEntry[]>(() => loadStoredUploads())
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RECENT_UPLOADS_STORAGE_KEY, JSON.stringify(uploads))
+    } catch {
+      // best-effort persistence only -- a full/unavailable localStorage
+      // shouldn't break the upload feature itself
+    }
+  }, [uploads])
+
+  function handleVideoUploaded(video: Video, cameraId: string, filename: string) {
+    setUploads((current) => [...current, { videoId: video.id, cameraId, filename, createdAt: Date.now() }])
+    fetchCameras()
+  }
 
   const fetchCameras = () => {
     setIsRefreshing(true)
@@ -173,7 +205,6 @@ function App() {
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header
           title={currentMeta.title}
-          subtitle={currentMeta.subtitle}
           cameras={cameras}
           selectedCameraId={selectedCameraId}
           onSelectCamera={(id) => setSelectedCameraId(id)}
@@ -182,7 +213,6 @@ function App() {
           isRefreshing={isRefreshing}
           onOpenDemoModal={() => setIsDemoModalOpen(true)}
           isApiConnected={isApiConnected}
-          onNavigateToCameras={() => setActiveView('cameras')}
           targetsInFrame={selectedCameraId ? headerScene.trajectories.length : undefined}
           criticalEventCount={criticalEvents.length}
           onSeekToCriticalEvent={
@@ -196,7 +226,6 @@ function App() {
               cameras={cameras}
               selectedCameraId={selectedCameraId}
               onSelectCamera={setSelectedCameraId}
-              isApiConnected={isApiConnected}
               onNavigateToEvents={() => setActiveView('events')}
               onNavigateToAnalytics={() => setActiveView('analytics')}
             />
@@ -219,6 +248,9 @@ function App() {
               cameras={cameras}
               selectedCameraId={selectedCameraId}
               onSelectCamera={setSelectedCameraId}
+              onNavigateToLive={() => setActiveView('live')}
+              uploads={uploads}
+              onVideoUploaded={handleVideoUploaded}
             />
           )}
           {activeView === 'events' && (

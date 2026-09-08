@@ -29,15 +29,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from database import repository
 from database.db import create_all, get_engine, get_session_factory
-from detection.frame_source import Frame, FrameSource
-from detection.yolo_detector import DEFAULT_CLASS_ALLOWLIST, DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_MODEL_PATH, YoloDetector
-from events.engine import EventEngine
-from geometry.homography import load_camera_homography
-from geometry.line_crossing import load_camera_lines
-from geometry.zone import load_camera_zones
+from detection.yolo_detector import DEFAULT_CLASS_ALLOWLIST, DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_MODEL_PATH
 from logging_config import configure_logging
-from trajectories.trajectory import centroid
-from tracking.byte_tracker import ByteTracker
+from pipeline import process_video
 
 logger = logging.getLogger("trace.worker")
 
@@ -124,16 +118,8 @@ def main() -> None:
     create_all(engine)
     Session = get_session_factory(engine)
 
-    homography = load_camera_homography(args.camera_id, configs_dir=args.configs_dir)
-    lines = load_camera_lines(args.camera_id, configs_dir=args.configs_dir)
-    zones = load_camera_zones(args.camera_id, configs_dir=args.configs_dir)
-
     with Session() as session:
         camera = repository.get_or_create_camera(session, args.camera_id)
-        for zone in zones:
-            repository.get_or_create_zone(session, camera, zone.id, zone.polygon)
-        for line in lines:
-            repository.get_or_create_line(session, camera, line.id, line.start, line.end)
 
         source = _parse_source(args.source)
         video = None
@@ -143,63 +129,27 @@ def main() -> None:
             # file"), which is also what GET /videos/{id}/stream serves.
             video = repository.create_video(session, camera, source)
         session.commit()
-        logger.info("loaded camera_id=%r: %d line(s), %d zone(s) -> persisted to database", args.camera_id, len(lines), len(zones))
         if video is not None:
             logger.info("registered video id=%s path=%r -- GET /videos/%s/stream serves it", video.id, source, video.id)
         logger.info(
             "starting pipeline: source=%r model=%r confidence=%.2f num_frames=%s",
             source, args.model, args.confidence, args.num_frames if args.num_frames is not None else "unbounded (until source exhausted)",
         )
-        detector = YoloDetector(
-            model_path=args.model,
-            confidence_threshold=args.confidence,
+
+        process_video(
+            session,
+            camera,
+            source,
+            configs_dir=args.configs_dir,
+            num_frames=args.num_frames,
+            frame_skip=args.frame_skip,
+            confidence=args.confidence,
             class_allowlist=class_allowlist,
-        )
-        tracker = ByteTracker()
-        event_engine = EventEngine(
-            camera_id=args.camera_id,
-            homography=homography,
-            lines=lines,
-            zones=zones,
+            model=args.model,
+            commit_every=args.commit_every,
             speed_limit=args.speed_limit,
             min_deceleration_magnitude=args.min_deceleration_magnitude,
         )
-
-        total_events = 0
-        total_track_points = 0
-        with FrameSource(source, frame_skip=args.frame_skip) as frame_source:
-            frame_count = 0
-            while args.num_frames is None or frame_count < args.num_frames:
-                frame: Frame | None = frame_source.read()
-                if frame is None:
-                    logger.info("source exhausted after %d frame(s)", frame_count)
-                    break
-
-                detections = detector.detect(frame)
-                tracks = tracker.update(detections)
-                events = event_engine.update(tracks, timestamp=frame.timestamp)
-
-                for track in tracks:
-                    tracked_object = repository.get_or_create_object(
-                        session, camera, track.object_id, track.class_name, track.timestamp
-                    )
-                    x, y = centroid(track.bbox)
-                    repository.add_track_point(
-                        session, tracked_object, track.frame_id, track.timestamp, x, y, bbox=track.bbox
-                    )
-                    total_track_points += 1
-
-                for event in events:
-                    repository.add_event_from_pipeline(session, camera, event)
-                    total_events += 1
-
-                if frame_count % args.commit_every == 0:
-                    session.commit()
-
-                frame_count += 1
-
-        session.commit()
-        logger.info("persisted %d track_point(s) and %d event(s) across %d frame(s)", total_track_points, total_events, frame_count)
 
 
 if __name__ == "__main__":

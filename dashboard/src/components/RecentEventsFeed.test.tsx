@@ -34,16 +34,18 @@ describe('RecentEventsFeed', () => {
       makeEvent(6, 'LINE_CROSSED'),
     ]
 
-    render(<RecentEventsFeed events={events} />)
+    const { container } = render(<RecentEventsFeed events={events} />)
 
-    const severities = screen
-      .getAllByText((_, element) => element !== null && element.hasAttribute('data-severity'))
-      .map((el) => el.getAttribute('data-severity'))
+    // Each row's event type renders as its own severity-colored span
+    // (IncidentCard) -- read them back in DOM order.
+    const eventTypesInOrder = Array.from(container.querySelectorAll('[role="button"]')).map(
+      (row) => row.querySelector('span.font-semibold')?.textContent,
+    )
 
     // danger (OVERSPEED, LINE_CROSSED) first, then warning (LOITERING), then
     // info (OBJECT_APPEARED x2, OBJECT_DISAPPEARED) -- original relative
     // order preserved inside each tier.
-    expect(severities).toEqual(['danger', 'danger', 'warning', 'info', 'info', 'info'])
+    expect(eventTypesInOrder).toEqual(['OVERSPEED', 'LINE_CROSSED', 'LOITERING', 'OBJECT_APPEARED', 'OBJECT_DISAPPEARED', 'OBJECT_APPEARED'])
   })
 
   it('still shows only one severity tier when a quick filter is active', () => {

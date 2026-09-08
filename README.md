@@ -447,6 +447,18 @@ pip install -e ".[dev,agent]"
 uvicorn api.app:app --reload --app-dir src --port 8000
 ```
 
+> **Upgrading an existing database (video upload feature):** TRACE has no migration tool (`database/db.py::create_all()` only creates missing *tables*, not missing *columns* on a table that already exists — see its docstring). If your `trace`/`trace_test` database already existed before the video-upload feature was added, `videos` is missing the columns it needs (`status`, `total_frames`, `frames_processed`, `current_fps`, `error_message`, `processing_started_at`) and every `POST /videos/upload` or `GET /videos/{id}/status` call will fail with `UndefinedColumn`. Run this once against each existing database (a fresh `docker compose up` with a new volume doesn't need it — `create_all()` creates the full, current schema on an empty database):
+> ```sql
+> ALTER TABLE videos ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'done';
+> ALTER TABLE videos ADD COLUMN IF NOT EXISTS total_frames INTEGER;
+> ALTER TABLE videos ADD COLUMN IF NOT EXISTS frames_processed INTEGER NOT NULL DEFAULT 0;
+> ALTER TABLE videos ADD COLUMN IF NOT EXISTS current_fps DOUBLE PRECISION;
+> ALTER TABLE videos ADD COLUMN IF NOT EXISTS error_message VARCHAR;
+> ALTER TABLE videos ADD COLUMN IF NOT EXISTS processing_started_at TIMESTAMP;
+> CREATE INDEX IF NOT EXISTS ix_videos_status ON videos(status);
+> ```
+> Purely additive (no existing row/column is touched) — safe to run against `trace` and `trace_test` alike, e.g. `psql postgresql://trace:trace@localhost:5433/trace -f upgrade.sql`.
+
 ### 2. Frontend Dashboard Setup
 ```bash
 cd dashboard
@@ -495,6 +507,8 @@ Interactive OpenAPI documentation and live request runner are available at: **`h
 | `GET` | `/cameras/{camera_id}/objects` | Objects | List all tracked entities and their metadata |
 | `GET` | `/objects/{id}/trajectory` | Objects | Fetch full timestamped coordinate trajectory points |
 | `GET` | `/cameras/{camera_id}/events` | Events | Query spatial and kinetic incident violations |
+| `POST` | `/videos/upload` | Videos | Upload a video file for a camera (creating it if needed); registers it `pending` for `scripts/upload_worker.py` to run the real pipeline over asynchronously — OVERSPEED/SUDDEN_STOP are always suppressed for videos ingested this way (Section 17: no camera created here has real calibration) |
+| `GET` | `/videos/{id}/status` | Videos | Real, frame-count-derived processing progress (`percent`, `frames_processed`/`total_frames`, measured FPS, ETA once enough frames are in) for the upload feature's polling UI |
 | `POST` | `/alerts` | Alerts | Directly create an alert record for a camera (bypasses the agent's propose/approve gate — a human/system POSTing here is already the confirmation that gate exists to require) |
 | `GET` | `/analytics` | Analytics | Retrieve aggregated dwell times, traffic volume, and counts |
 | `POST` | `/agent/query` | AI Agent | Query LLM agent for natural language forensic insights |
@@ -534,17 +548,17 @@ Interactive OpenAPI documentation and live request runner are available at: **`h
 TRACE maintains 100% test coverage across backend mathematical logic, API routers, database migrations, and frontend UI components:
 
 ```bash
-# 1. Backend Pytest Suites (243 tests)
+# 1. Backend Pytest Suites (257 tests)
 pytest tests/ -v
 
-# 2. Frontend Vitest Suites (70 tests)
+# 2. Frontend Vitest Suites (123 tests)
 cd dashboard && npm test -- --run
 
 # 3. Frontend Quality & Linting
 cd dashboard && npm run lint
 ```
 
-> **Total Test Coverage:** **313 automated tests passed** (243 backend pytest + 70 frontend vitest).
+> **Total Test Coverage:** **380 automated tests passed** (257 backend pytest + 123 frontend vitest).
 
 ---
 

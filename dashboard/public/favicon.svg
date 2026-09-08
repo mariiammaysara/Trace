@@ -1,12 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <title>TRACE</title>
-  <style>
-    .ring, .line { stroke: #0B1220; }
-    @media (prefers-color-scheme: dark) {
-      .ring, .line { stroke: #9AA5B4; }
-    }
-  </style>
-  <line class="line" x1="24.95" y1="39.05" x2="37.51" y2="26.49" stroke-width="5" stroke-linecap="round"/>
-  <circle class="ring" cx="20" cy="44" r="7" fill="none" stroke-width="5"/>
-  <circle cx="46" cy="18" r="12" fill="#00AEEF"/>
+  <!-- Same reticle "T" mark as TraceLogo.tsx (src/components/TraceLogo.tsx),
+       redrawn as a standalone static asset with the current theme's real hex
+       values baked in (a favicon can't reach the app's live CSS custom
+       properties in tokens.css). Update this alongside TraceLogo.tsx if the
+       brand palette ever changes again: the same caveat the old
+       trace-symbol.svg/favicon.svg had, and fell out of sync on. -->
+  <rect width="32" height="32" rx="6" fill="#0d0f14" />
+
+  <!-- Outer Corner Reticles (Bounding Box Brackets), color: text-on-dark-subtle -->
+  <path d="M 6 11 V 6 H 11" stroke="#71717a" stroke-width="1.5" stroke-linecap="round" fill="none" />
+  <path d="M 21 6 H 26 V 11" stroke="#71717a" stroke-width="1.5" stroke-linecap="round" fill="none" />
+  <path d="M 6 21 V 26 H 11" stroke="#71717a" stroke-width="1.5" stroke-linecap="round" fill="none" />
+  <path d="M 21 26 H 26 V 21" stroke="#71717a" stroke-width="1.5" stroke-linecap="round" fill="none" />
+
+  <!-- Central Structural "T", color: text-on-dark -->
+  <path d="M 10 13 H 22" stroke="#f4f4f5" stroke-width="2" stroke-linecap="round" />
+  <path d="M 16 13 V 22" stroke="#f4f4f5" stroke-width="2" stroke-linecap="round" />
+
+  <!-- Spatial Anchor Point, color: accent -->
+  <circle cx="16" cy="13" r="1.5" fill="#06b6d4" />
 </svg>

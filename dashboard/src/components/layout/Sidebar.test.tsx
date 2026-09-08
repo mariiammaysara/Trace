@@ -66,4 +66,33 @@ describe('Sidebar', () => {
     rerender(<Sidebar activeView="dashboard" onNavigate={vi.fn()} isApiConnected={false} />)
     expect(screen.getByText('Offline')).toBeInTheDocument()
   })
+
+  describe('collapsed rail mode', () => {
+    it('hides labels and group headers, but keeps every nav item clickable by icon alone', () => {
+      const onNavigate = vi.fn()
+      render(<Sidebar activeView="dashboard" onNavigate={onNavigate} cameraCount={3} criticalEventCount={1} />)
+
+      fireEvent.click(screen.getByLabelText('Collapse sidebar'))
+
+      expect(screen.queryByText('Real-Time Surveillance')).not.toBeInTheDocument()
+      // The label only survives inside the (always-mounted, CSS-hidden until
+      // hover) tooltip -- exactly one instance, not a second visible copy.
+      expect(screen.getAllByText('Live Monitoring')).toHaveLength(1)
+      expect(screen.getByText('3 LIVE')).toBeInTheDocument()
+      expect(screen.getByText('1 BREACH')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Live Monitoring' }))
+      expect(onNavigate).toHaveBeenCalledWith('live')
+    })
+
+    it('expands again from the rail via the same toggle', () => {
+      render(<Sidebar activeView="dashboard" onNavigate={vi.fn()} />)
+
+      fireEvent.click(screen.getByLabelText('Collapse sidebar'))
+      expect(screen.getAllByText('Overview')).toHaveLength(1)
+
+      fireEvent.click(screen.getByLabelText('Expand sidebar'))
+      expect(screen.getByText('Overview')).toBeInTheDocument()
+    })
+  })
 })

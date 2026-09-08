@@ -1,9 +1,8 @@
-import { EventBadge } from '@/components/EventBadge'
 import { ObjectIdLink } from '@/components/ObjectIdLink'
 import { Button } from '@/components/ui/button'
-import { Clock, RotateCw } from 'lucide-react'
+import { RotateCw } from 'lucide-react'
 import type { TraceEvent } from '@/lib/api'
-import { classifyEventSeverity } from '@/lib/eventSeverity'
+import { classifyEventSeverity, type EventSeverity } from '@/lib/eventSeverity'
 import { cn } from '@/lib/utils'
 
 interface IncidentCardProps {
@@ -17,12 +16,20 @@ interface IncidentCardProps {
   className?: string
 }
 
+/** Plain colored text per severity -- no pill/border chrome here. Reserves
+ * color for what it actually means (a confirmed violation reads in
+ * --color-danger); a badge shape would just be decoration on top of that. */
+const SEVERITY_TEXT: Record<EventSeverity, string> = {
+  danger: 'text-danger',
+  warning: 'text-warning',
+  info: 'text-ink-subtle',
+}
+
 /**
- * One incident/violation row: severity badge, target id/class, exact
- * timestamp, and a prominent Replay action that seeks the video straight to
- * this event -- the shared building block for every "incident stream" list
- * in the app (Live/Overview's Recent Events panel today; Investigation and
- * Alerts are natural future homes for the same component).
+ * One incident row: timestamp, event type, target -- a single dense line,
+ * not a two-line card. The shared building block for every "incident
+ * stream" list in the app (Live/Overview's Recent Events panel today; the
+ * Vision Agent's "related incidents" chips reuse it too).
  */
 export function IncidentCard({ event, isSelected, onSelect, onSelectObject, className }: IncidentCardProps) {
   const severity = classifyEventSeverity(event.event_type)
@@ -39,65 +46,36 @@ export function IncidentCard({ event, isSelected, onSelect, onSelectObject, clas
         }
       }}
       className={cn(
-        'group flex items-center justify-between gap-2 px-3.5 py-2 transition-colors text-left cursor-pointer select-none',
-        'hover:bg-surface-alt/50 focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2',
-        isSelected && 'bg-accent/10 border-l-2 border-l-accent',
-        !isSelected && severity === 'danger' && 'bg-danger/5 border-l-2 border-l-danger',
-        !isSelected && severity === 'warning' && 'border-l-2 border-l-warning',
-        !isSelected && severity === 'info' && 'border-l-2 border-l-transparent',
+        'group flex h-10 items-center justify-between gap-2 border-b border-border/40 px-3 text-left cursor-pointer select-none transition-colors',
+        'hover:bg-white/[0.02] focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2',
+        isSelected && 'bg-white/[0.04]',
         className,
       )}
     >
-      <div className="flex items-start gap-2 min-w-0">
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <EventBadge eventType={event.event_type} />
-            <span className="text-xs font-mono font-medium text-ink">
-              <ObjectIdLink objectId={event.object_id} onSelectObject={onSelectObject} /> {event.class_name}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 text-[11px] text-ink-subtle">
-            <span className="flex items-center gap-0.5 font-mono tabular-nums">
-              <Clock className="h-2.5 w-2.5 text-ink-subtle" />
-              t={event.timestamp.toFixed(1)}s
-            </span>
-            {event.zone_id && (
-              <span className="rounded bg-surface-alt px-1 py-0.2 text-[9px] font-mono text-ink-subtle">
-                {event.zone_id}
-              </span>
-            )}
-            {event.line_id && (
-              <span className="rounded bg-surface-alt px-1 py-0.2 text-[9px] font-mono text-ink-subtle">
-                {event.line_id}
-              </span>
-            )}
-            {typeof event.metadata?.speed === 'number' && (
-              <span className="font-mono text-danger font-semibold">
-                {Math.round(event.metadata.speed as number)} km/h
-              </span>
-            )}
-          </div>
-        </div>
+      <div className="flex items-center gap-2.5 min-w-0 font-mono text-xs">
+        <span className="text-ink-subtle tabular-nums shrink-0">{event.timestamp.toFixed(1)}s</span>
+        <span className={cn('font-semibold shrink-0', SEVERITY_TEXT[severity])}>{event.event_type}</span>
+        <span className="text-ink truncate">
+          <ObjectIdLink objectId={event.object_id} onSelectObject={onSelectObject} /> {event.class_name}
+        </span>
       </div>
 
-      <div className="flex items-center gap-1.5 pl-2 shrink-0">
+      <div className="flex items-center gap-2 pl-2 shrink-0">
         <span className="text-[10px] font-mono text-ink-subtle tabular-nums">
           {Math.round(event.confidence * 100)}%
         </span>
         <Button
           type="button"
-          variant="outline"
-          size="xs"
+          variant="ghost"
+          size="icon-xs"
           onClick={(e) => {
             e.stopPropagation()
             onSelect?.(event)
           }}
           aria-label={`Replay incident at ${event.timestamp.toFixed(1)} seconds`}
-          className="h-6 gap-1 border-accent/40 text-accent hover:bg-accent/10 text-[10px] font-semibold px-1.5"
+          className="text-ink-subtle opacity-0 transition-opacity group-hover:opacity-100 hover:text-ink hover:bg-white/[0.06]"
         >
-          <RotateCw className="h-3 w-3" />
-          <span className="hidden sm:inline">Replay</span>
+          <RotateCw className="h-3.5 w-3.5" />
         </Button>
       </div>
     </div>

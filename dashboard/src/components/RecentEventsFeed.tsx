@@ -61,7 +61,7 @@ export function RecentEventsFeed({
     <Card className={cn('flex flex-col h-full overflow-hidden border-border bg-surface shadow-2xs', className)}>
       <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 px-4 py-2.5">
         <CardTitle className="text-sm font-semibold tracking-tight text-ink flex items-center gap-1.5">
-          <AlertTriangle className="h-3.5 w-3.5 text-warning" />
+          <AlertTriangle className="h-3.5 w-3.5 text-ink-subtle" />
           Recent Events
         </CardTitle>
 
@@ -87,9 +87,7 @@ export function RecentEventsFeed({
           onClick={() => setActiveFilter('all')}
           className={cn(
             'rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
-            activeFilter === 'all'
-              ? 'bg-surface text-ink shadow-2xs font-semibold'
-              : 'text-ink-subtle hover:text-ink',
+            activeFilter === 'all' ? 'bg-white/[0.06] text-ink font-semibold' : 'text-ink-subtle hover:text-ink',
           )}
         >
           All ({events.length})
@@ -100,9 +98,7 @@ export function RecentEventsFeed({
           onClick={() => setActiveFilter('violations')}
           className={cn(
             'rounded px-2 py-0.5 text-[11px] font-medium transition-colors flex items-center gap-1',
-            activeFilter === 'violations'
-              ? 'bg-danger/10 text-danger font-semibold border border-danger/20'
-              : 'text-ink-subtle hover:text-danger',
+            activeFilter === 'violations' ? 'bg-white/[0.06] text-ink font-semibold' : 'text-ink-subtle hover:text-danger',
           )}
         >
           <span className="h-1.5 w-1.5 rounded-full bg-danger" />
@@ -114,9 +110,7 @@ export function RecentEventsFeed({
           onClick={() => setActiveFilter('warnings')}
           className={cn(
             'rounded px-2 py-0.5 text-[11px] font-medium transition-colors flex items-center gap-1',
-            activeFilter === 'warnings'
-              ? 'bg-warning/10 text-warning font-semibold border border-warning/20'
-              : 'text-ink-subtle hover:text-warning',
+            activeFilter === 'warnings' ? 'bg-white/[0.06] text-ink font-semibold' : 'text-ink-subtle hover:text-warning',
           )}
         >
           <span className="h-1.5 w-1.5 rounded-full bg-warning" />
@@ -124,7 +118,7 @@ export function RecentEventsFeed({
         </button>
       </div>
 
-      <CardContent className="flex-1 overflow-y-auto p-0 min-h-[260px] max-h-[440px] divide-y divide-border/30">
+      <CardContent className="flex-1 overflow-y-auto p-0 min-h-[260px] max-h-[440px]">
         {filteredEvents.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-8 text-center h-full">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-alt text-ink-subtle mb-2">

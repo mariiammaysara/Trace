@@ -51,6 +51,10 @@ interface VideoPlayerProps {
   /** Phase 20: surfaces real-time event alerts during demo/playback. */
   onInvestigateEvent?: (eventId: number) => void
   activeScenarioTitle?: string | null
+  /** Real, native video resolution once the browser actually loads it --
+   * never available before then, so callers should treat "not called yet"
+   * as "unknown," not assume a default. */
+  onVideoMetadata?: (size: { width: number; height: number }) => void
 }
 
 export function VideoPlayer({
@@ -64,6 +68,7 @@ export function VideoPlayer({
   onSelectObject,
   onInvestigateEvent,
   activeScenarioTitle,
+  onVideoMetadata,
 }: VideoPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -171,8 +176,10 @@ export function VideoPlayer({
           className={mediaError ? 'hidden' : 'block h-full w-full object-contain'}
           onLoadedMetadata={(event) => {
             const element = event.currentTarget
-            setVideoSize({ width: element.videoWidth, height: element.videoHeight })
+            const size = { width: element.videoWidth, height: element.videoHeight }
+            setVideoSize(size)
             setDuration(element.duration)
+            onVideoMetadata?.(size)
           }}
           onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
           onPlay={() => setIsPlaying(true)}

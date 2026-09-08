@@ -4,11 +4,10 @@ import { VideoPlayer, type SeekRequest } from '@/components/VideoPlayer'
 import { RecentEventsFeed } from '@/components/RecentEventsFeed'
 import { CameraFleetCard } from '@/components/CameraFleetCard'
 import { BarChart, type BarChartDatum } from '@/components/charts/BarChart'
-import { getAnalytics, listCameraObjects } from '@/lib/api'
-import type { Camera, AnalyticsSummary, TraceEvent, TrackedObjectSummary } from '@/lib/api'
+import { getAnalytics } from '@/lib/api'
+import type { Camera, AnalyticsSummary, TraceEvent } from '@/lib/api'
 import { useCameraScene } from '@/hooks/useCameraScene'
 import { classifyEventType } from '@/lib/eventClassification'
-import { classifyEventSeverity } from '@/lib/eventSeverity'
 import {
   Video,
   BarChart3,
@@ -17,13 +16,11 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 
 interface DashboardViewProps {
   cameras: Camera[]
   selectedCameraId: string | null
   onSelectCamera: (cameraId: string | null) => void
-  isApiConnected?: boolean
   onNavigateToEvents?: () => void
   onNavigateToAnalytics?: () => void
 }
@@ -32,34 +29,33 @@ export function DashboardView({
   cameras,
   selectedCameraId,
   onSelectCamera,
-  isApiConnected = true,
   onNavigateToEvents,
   onNavigateToAnalytics,
 }: DashboardViewProps) {
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null)
-  const [cameraObjects, setCameraObjects] = useState<TrackedObjectSummary[]>([])
   const [analyticsError, setAnalyticsError] = useState<string | null>(null)
 
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null)
   const [seekRequest, setSeekRequest] = useState<SeekRequest | null>(null)
+  // Real resolution once the browser actually loads the stream -- there is
+  // no resolution/fps field on the Video record itself (src/lib/api.ts), so
+  // this is the only honest source for it, and it's null (shown as nothing,
+  // not a guess) until onLoadedMetadata actually fires.
+  const [videoResolution, setVideoResolution] = useState<{ width: number; height: number } | null>(null)
 
   // Active camera scene (video, trajectories, events, zones, lines)
   const { video, trajectories, events, zones, lines, error: sceneError } = useCameraScene(selectedCameraId)
 
-  // 3. Fetch analytics & object counts for active camera
+  // Fetch analytics (per-class/event-frequency charts) for the active camera
   useEffect(() => {
+    setVideoResolution(null)
     if (!selectedCameraId) return
     let cancelled = false
     setAnalyticsError(null)
 
-    Promise.all([
-      getAnalytics(selectedCameraId).catch(() => null),
-      listCameraObjects(selectedCameraId).catch(() => []),
-    ])
-      .then(([summary, objects]) => {
-        if (cancelled) return
-        if (summary) setAnalytics(summary)
-        setCameraObjects(objects)
+    getAnalytics(selectedCameraId)
+      .then((summary) => {
+        if (!cancelled) setAnalytics(summary)
       })
       .catch((err: unknown) => {
         if (!cancelled) setAnalyticsError(String(err))
@@ -77,11 +73,6 @@ export function DashboardView({
 
   const selectedCamera = cameras.find((c) => c.camera_id === selectedCameraId)
   const error = sceneError ?? analyticsError
-
-  // Derived real metrics
-  const trackedCount = analytics?.object_count ?? cameraObjects.length ?? trajectories.length
-  const totalEventsCount = events.length
-  const violationCount = events.filter((e) => classifyEventSeverity(e.event_type) === 'danger').length
 
   // Chart data: Object distribution from real per_class_stats
   const perClassObjectData: BarChartDatum[] = analytics?.per_class_stats
@@ -107,6 +98,18 @@ export function DashboardView({
         }))
     : []
 
+  // The video card's context line -- real camera id, real resolution (once
+  // known), and the pipeline's real, actually-deployed architecture. No FPS
+  // reading (not exposed anywhere) and no "calibrated" claim: every
+  // configured camera's homography is illustrative/placeholder only (see
+  // configs/cameras/*.json's own comments), so "geometry," not "calibrated."
+  const contextLine = [
+    selectedCameraId ? selectedCameraId.toUpperCase() : null,
+    videoResolution ? `${videoResolution.height}p` : null,
+  ]
+    .filter(Boolean)
+    .join(' // ')
+
   return (
     <div className="flex flex-col gap-4 max-w-[1600px] mx-auto w-full">
       {/* Global Error Banner if API Fails */}
@@ -117,42 +120,20 @@ export function DashboardView({
         </div>
       )}
 
-      {/* System status -- tier 1 of Overview's hierarchy. One slim strip,
-          not a row of cards: this is context for what follows, not the
-          page's subject. Real state only (isApiConnected mirrors whether
-          the last listCameras() call actually succeeded). */}
-      <div className="flex flex-wrap items-center divide-x divide-border rounded-md border border-border bg-surface">
-        <div className="flex items-center gap-1.5 px-3.5 py-2">
-          <span className={cn('h-1.5 w-1.5 rounded-full', isApiConnected ? 'bg-success' : 'bg-danger')} />
-          <span className="text-xs font-medium text-ink">{isApiConnected ? 'System operational' : 'System offline'}</span>
-        </div>
-        <div className="flex items-center gap-1.5 px-3.5 py-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">Cameras</span>
-          <span className="font-mono text-sm font-semibold text-ink">{cameras.length}</span>
-        </div>
-        <div className="flex items-center gap-1.5 px-3.5 py-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">Tracked</span>
-          <span className="font-mono text-sm font-semibold text-ink">{trackedCount}</span>
-        </div>
-        <div className="flex items-center gap-1.5 px-3.5 py-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">Events</span>
-          <span className="font-mono text-sm font-semibold text-ink">{totalEventsCount}</span>
-          {violationCount > 0 && (
-            <span className="font-mono text-xs font-semibold text-danger">· {violationCount} violation{violationCount === 1 ? '' : 's'}</span>
-          )}
-        </div>
-      </div>
-
-      {/* Primary Operations Section: Live Feed (68%) + Recent Events (32%) */}
+      {/* Primary Operations Section: Live Feed (68%) + Recent Events (32%) --
+          the actual operational content, first thing on the page. */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 items-start">
         {/* Left Column: Live Video Feed Card */}
         <div className="lg:col-span-8 flex flex-col gap-2">
           <Card size="sm" className="border-border bg-surface shadow-2xs overflow-hidden">
-            <CardHeader className="flex flex-row items-center border-b border-border/50">
-              <CardTitle className="text-sm font-semibold tracking-tight text-ink flex items-center gap-1.5">
-                <Video className="h-3.5 w-3.5 text-ink-subtle" />
-                Live Monitoring
-              </CardTitle>
+            <CardHeader className="flex flex-row items-center border-b border-border/50 py-2">
+              <div className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap font-mono text-[11px] text-ink-subtle">
+                {contextLine && <span className="text-ink font-semibold">{contextLine}</span>}
+                {contextLine && <span className="text-border">•</span>}
+                <span>YOLOv8n + ByteTrack</span>
+                <span className="text-border">•</span>
+                <span>Planar homography geometry</span>
+              </div>
             </CardHeader>
 
             <CardContent>
@@ -165,6 +146,7 @@ export function DashboardView({
                   lines={lines}
                   seekRequest={seekRequest}
                   cameraName={selectedCamera?.name ?? selectedCameraId}
+                  onVideoMetadata={setVideoResolution}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border bg-surface-alt/30 py-10 text-center">

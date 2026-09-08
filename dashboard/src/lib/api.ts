@@ -16,11 +16,41 @@ export interface Camera {
   calibration_reference: string | null
 }
 
+export type VideoProcessingStatus = 'pending' | 'processing' | 'done' | 'failed'
+
 export interface Video {
   id: number
   camera_id: number
   path: string
   started_at: string | null
+  // Optional: only meaningful for a video ingested through POST
+  // /videos/upload (see src/database/models.py's Video docstring) --
+  // omitted from existing test mocks that predate the upload feature and
+  // represent an already-"done" video, so these stay optional here rather
+  // than forcing every call site to fill in defaults it doesn't care about.
+  status?: VideoProcessingStatus
+  total_frames?: number | null
+  frames_processed?: number
+  current_fps?: number | null
+  error_message?: string | null
+}
+
+/**
+ * GET /videos/{id}/status -- real, stored-column-derived progress for the
+ * upload feature's polling UI. percent/eta_seconds are None from the
+ * backend until they're backed by real numbers (percent needs total_frames,
+ * known upfront; eta_seconds needs a real FPS measurement over enough
+ * frames) -- never a client-side simulated/guessed value.
+ */
+export interface VideoStatus {
+  id: number
+  status: VideoProcessingStatus
+  total_frames: number | null
+  frames_processed: number
+  percent: number | null
+  current_fps: number | null
+  eta_seconds: number | null
+  error_message: string | null
 }
 
 export interface TrackedObjectSummary {
@@ -199,6 +229,30 @@ export function listCameraLines(cameraId: string): Promise<Line[]> {
 
 export function getVideoStreamUrl(videoId: number): string {
   return `${API_BASE_URL}/videos/${videoId}/stream`
+}
+
+/**
+ * POST /videos/upload -- multipart file upload. Returns as soon as the file
+ * is validated and saved (status="pending"); scripts/upload_worker.py's
+ * poll loop is what actually runs the real pipeline over it (Step 1's
+ * design: this never blocks on minutes of CPU-bound inference). Rejects
+ * with a real backend error message (unsupported format, oversized file,
+ * corrupt/unreadable video) via readErrorDetail -- never a generic failure.
+ */
+export function uploadVideo(file: File, cameraId: string, cameraName?: string): Promise<Video> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('camera_id', cameraId)
+  if (cameraName) formData.append('camera_name', cameraName)
+
+  return fetch(`${API_BASE_URL}/videos/upload`, { method: 'POST', body: formData }).then(async (response) => {
+    if (!response.ok) throw new Error(await readErrorDetail(response))
+    return response.json() as Promise<Video>
+  })
+}
+
+export function getVideoStatus(videoId: number): Promise<VideoStatus> {
+  return apiGet<VideoStatus>(`/videos/${videoId}/status`)
 }
 
 /**

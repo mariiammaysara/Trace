@@ -9,29 +9,36 @@ const cameras: Camera[] = [
 ]
 
 describe('Header', () => {
-  it('shows system online/offline based on isApiConnected, never a fabricated FPS/latency figure', () => {
+  it('shows system operational/offline based on isApiConnected, never a fabricated FPS/latency figure', () => {
     const { rerender } = render(
       <Header cameras={cameras} selectedCameraId="demo" onSelectCamera={vi.fn()} isApiConnected={true} />,
     )
-    expect(screen.getByText('SYSTEM ONLINE')).toBeInTheDocument()
+    expect(screen.getByText('Operational')).toBeInTheDocument()
     expect(screen.queryByText(/FPS/)).not.toBeInTheDocument()
     expect(screen.queryByText(/LATENCY/)).not.toBeInTheDocument()
 
     rerender(<Header cameras={cameras} selectedCameraId="demo" onSelectCamera={vi.fn()} isApiConnected={false} />)
-    expect(screen.getByText('SYSTEM OFFLINE')).toBeInTheDocument()
+    expect(screen.getByText('Offline')).toBeInTheDocument()
   })
 
-  it('does not show a targets-in-frame reading when none was given (no camera/scene loaded)', () => {
+  it('shows the real feeds count as plain inline telemetry', () => {
+    render(<Header cameras={cameras} selectedCameraId="demo" onSelectCamera={vi.fn()} />)
+    expect(screen.getByText('Feeds:')).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
+  })
+
+  it('does not show a targets reading when none was given (no camera/scene loaded)', () => {
     render(<Header cameras={cameras} selectedCameraId={null} onSelectCamera={vi.fn()} />)
-    expect(screen.queryByText(/TARGET/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Targets:')).not.toBeInTheDocument()
   })
 
-  it('shows the real targets-in-frame count when provided', () => {
+  it('shows the real targets count when provided', () => {
     render(<Header cameras={cameras} selectedCameraId="demo-trafficlight" onSelectCamera={vi.fn()} targetsInFrame={130} />)
-    expect(screen.getByText('130 TARGETS IN FRAME')).toBeInTheDocument()
+    expect(screen.getByText('Targets:')).toBeInTheDocument()
+    expect(screen.getByText('130')).toBeInTheDocument()
   })
 
-  it('hides the critical breach chip when there are no critical events', () => {
+  it('hides the critical breach segment when there are no critical events', () => {
     render(
       <Header
         cameras={cameras}
@@ -41,10 +48,10 @@ describe('Header', () => {
         onSeekToCriticalEvent={vi.fn()}
       />,
     )
-    expect(screen.queryByText(/CRITICAL BREACH/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Breach/)).not.toBeInTheDocument()
   })
 
-  it('shows the critical breach chip and seeks to it on click', () => {
+  it('shows the critical breach segment and seeks to it on click', () => {
     const onSeek = vi.fn()
     render(
       <Header
@@ -56,20 +63,20 @@ describe('Header', () => {
       />,
     )
 
-    const chip = screen.getByText('1 CRITICAL BREACH')
-    fireEvent.click(chip)
+    fireEvent.click(screen.getByText('1 Breach'))
     expect(onSeek).toHaveBeenCalledTimes(1)
   })
 
-  it('lets the feeds badge navigate to Cameras when wired, and renders as non-interactive otherwise', () => {
-    const onNavigate = vi.fn()
-    const { rerender } = render(
-      <Header cameras={cameras} selectedCameraId="demo" onSelectCamera={vi.fn()} onNavigateToCameras={onNavigate} />,
+  it('pluralizes the breach segment for more than one critical event', () => {
+    render(
+      <Header
+        cameras={cameras}
+        selectedCameraId="demo-trafficlight"
+        onSelectCamera={vi.fn()}
+        criticalEventCount={2}
+        onSeekToCriticalEvent={vi.fn()}
+      />,
     )
-    fireEvent.click(screen.getByText('2 FEEDS CONNECTED'))
-    expect(onNavigate).toHaveBeenCalledTimes(1)
-
-    rerender(<Header cameras={cameras} selectedCameraId="demo" onSelectCamera={vi.fn()} />)
-    expect(screen.getByText('2 FEEDS CONNECTED').closest('[role="button"]')).toBeNull()
+    expect(screen.getByText('2 Breaches')).toBeInTheDocument()
   })
 })

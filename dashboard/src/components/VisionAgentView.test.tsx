@@ -66,7 +66,7 @@ describe('VisionAgentView', () => {
     fireEvent.click(screen.getByText('Show events for camera demo.'))
 
     await waitFor(() => expect(screen.getByText('Related incidents (1)')).toBeInTheDocument())
-    expect(screen.getByText('t=9.5s')).toBeInTheDocument()
+    expect(screen.getByText('9.5s')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Replay incident at 9.5 seconds/i }))
     expect(onReplayEvent).toHaveBeenCalledWith(realEvent)

@@ -39,6 +39,51 @@ def create_video(session: Session, camera: Camera, path: str, started_at: Option
     return video
 
 
+def create_pending_video(session: Session, camera: Camera, path: str, total_frames: Optional[int]) -> Video:
+    """The upload flow's entry point (POST /videos/upload) -- status="pending"
+    so scripts/upload_worker.py's poll loop picks it up; total_frames is real,
+    read from the uploaded file itself via cv2.VideoCapture before this is
+    called, never estimated."""
+    video = Video(camera_id=camera.id, path=path, status="pending", total_frames=total_frames, frames_processed=0)
+    session.add(video)
+    session.flush()
+    return video
+
+
+def claim_next_pending_video(session: Session) -> Optional[Video]:
+    """Atomically claims the oldest still-pending video for processing --
+    SELECT ... FOR UPDATE SKIP LOCKED so two worker processes (there's only
+    ever one by design, but this makes that an actual guarantee rather than
+    an assumption) can never both claim the same row. Commits immediately so
+    the "processing" status is visible to GET /videos/{id}/status right away,
+    not just when the whole run finishes."""
+    video = session.execute(
+        select(Video).where(Video.status == "pending").order_by(Video.id).limit(1).with_for_update(skip_locked=True)
+    ).scalar_one_or_none()
+    if video is not None:
+        video.status = "processing"
+        video.processing_started_at = dt.datetime.utcnow()
+        session.commit()
+    return video
+
+
+def update_video_progress(session: Session, video: Video, frames_processed: int, current_fps: Optional[float]) -> None:
+    video.frames_processed = frames_processed
+    video.current_fps = current_fps
+    session.commit()
+
+
+def mark_video_done(session: Session, video: Video) -> None:
+    video.status = "done"
+    session.commit()
+
+
+def mark_video_failed(session: Session, video: Video, error_message: str) -> None:
+    video.status = "failed"
+    video.error_message = error_message
+    session.commit()
+
+
 def get_or_create_zone(session: Session, camera: Camera, zone_id: str, polygon: Sequence[Tuple[float, float]]) -> Zone:
     zone = session.execute(
         select(Zone).where(Zone.camera_id == camera.id, Zone.zone_id == zone_id)

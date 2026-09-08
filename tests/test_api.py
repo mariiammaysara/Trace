@@ -218,6 +218,153 @@ def test_stream_video_unknown_id_returns_404(client):
     assert response.status_code == 404
 
 
+# --- POST /videos/upload, GET /videos/{id}/status ---
+
+
+def test_upload_video_success_creates_pending_video_with_real_frame_count(client, tmp_path, monkeypatch, sample_video_path, sample_video_frame_count):
+    monkeypatch.setenv("TRACE_UPLOAD_DIR", str(tmp_path / "uploads"))
+
+    with open(sample_video_path, "rb") as f:
+        response = client.post(
+            "/videos/upload",
+            data={"camera_id": "cam_upload_1", "camera_name": "Uploaded Camera"},
+            files={"file": ("clip.mp4", f, "video/mp4")},
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "pending"
+    # Real cv2.CAP_PROP_FRAME_COUNT read from the file itself, not a guess --
+    # must match the fixture's own known frame count exactly.
+    assert body["total_frames"] == sample_video_frame_count
+    assert body["frames_processed"] == 0
+    assert (tmp_path / "uploads").is_dir()
+
+    cameras_response = client.get("/cameras")
+    assert any(c["camera_id"] == "cam_upload_1" and c["name"] == "Uploaded Camera" for c in cameras_response.json())
+
+
+def test_upload_video_attaches_to_existing_camera(client, tmp_path, monkeypatch, sample_video_path):
+    monkeypatch.setenv("TRACE_UPLOAD_DIR", str(tmp_path / "uploads"))
+    client.post("/cameras", json={"camera_id": "cam_upload_existing"})
+
+    with open(sample_video_path, "rb") as f:
+        response = client.post(
+            "/videos/upload",
+            data={"camera_id": "cam_upload_existing"},
+            files={"file": ("clip.mp4", f, "video/mp4")},
+        )
+    assert response.status_code == 201
+
+    videos_response = client.get("/videos", params={"camera_id": "cam_upload_existing"})
+    assert len(videos_response.json()) == 1
+
+
+def test_upload_video_rejects_unsupported_format(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("TRACE_UPLOAD_DIR", str(tmp_path / "uploads"))
+    response = client.post(
+        "/videos/upload",
+        data={"camera_id": "cam_upload_bad_format"},
+        files={"file": ("notes.txt", b"not a video", "text/plain")},
+    )
+    assert response.status_code == 400
+    assert "unsupported video format" in response.json()["detail"]
+    # rejected before any file lands on disk
+    assert not (tmp_path / "uploads").exists() or not any((tmp_path / "uploads").iterdir())
+
+
+def test_upload_video_rejects_oversized_file(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("TRACE_UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setenv("TRACE_UPLOAD_MAX_BYTES", "10")  # far smaller than any real video
+    response = client.post(
+        "/videos/upload",
+        data={"camera_id": "cam_upload_oversized"},
+        files={"file": ("clip.mp4", b"x" * 1000, "video/mp4")},
+    )
+    assert response.status_code == 413
+    assert "upload limit" in response.json()["detail"]
+
+
+def test_upload_video_rejects_corrupt_file(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("TRACE_UPLOAD_DIR", str(tmp_path / "uploads"))
+    response = client.post(
+        "/videos/upload",
+        data={"camera_id": "cam_upload_corrupt"},
+        files={"file": ("clip.mp4", b"this is not a real mp4 file", "video/mp4")},
+    )
+    assert response.status_code == 400
+    assert "could not read this file as a video" in response.json()["detail"]
+
+
+def test_upload_video_missing_camera_id_fails_validation(client, tmp_path, monkeypatch, sample_video_path):
+    monkeypatch.setenv("TRACE_UPLOAD_DIR", str(tmp_path / "uploads"))
+    with open(sample_video_path, "rb") as f:
+        response = client.post("/videos/upload", files={"file": ("clip.mp4", f, "video/mp4")})
+    assert response.status_code == 422
+
+
+def test_get_video_status_of_freshly_created_pending_video(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_status_pending")
+    video = repository.create_pending_video(db_session, camera, "/data/uploads/x.mp4", total_frames=100)
+    db_session.flush()
+
+    response = client.get(f"/videos/{video.id}/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["total_frames"] == 100
+    assert body["frames_processed"] == 0
+    assert body["percent"] == 0.0
+    # No FPS measured yet -- no ETA shown, not a guessed one.
+    assert body["current_fps"] is None
+    assert body["eta_seconds"] is None
+
+
+def test_get_video_status_computes_real_percent_and_eta_once_enough_frames_processed(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_status_processing")
+    video = repository.create_pending_video(db_session, camera, "/data/uploads/y.mp4", total_frames=100)
+    db_session.flush()
+    repository.claim_next_pending_video(db_session)
+    repository.update_video_progress(db_session, video, frames_processed=25, current_fps=10.0)
+
+    response = client.get(f"/videos/{video.id}/status")
+    body = response.json()
+    assert body["status"] == "processing"
+    assert body["percent"] == 25.0
+    assert body["current_fps"] == 10.0
+    assert body["eta_seconds"] == 7.5  # (100 - 25) / 10.0
+
+
+def test_get_video_status_withholds_eta_below_minimum_frame_threshold(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_status_too_early")
+    video = repository.create_pending_video(db_session, camera, "/data/uploads/z.mp4", total_frames=100)
+    db_session.flush()
+    repository.claim_next_pending_video(db_session)
+    # Only 5 frames measured -- too few for a real FPS estimate (see
+    # MIN_FRAMES_FOR_ETA_ESTIMATE) even though current_fps is set.
+    repository.update_video_progress(db_session, video, frames_processed=5, current_fps=10.0)
+
+    response = client.get(f"/videos/{video.id}/status")
+    assert response.json()["eta_seconds"] is None
+
+
+def test_get_video_status_failed_video_surfaces_error_message(client, db_session):
+    camera = repository.get_or_create_camera(db_session, "cam_status_failed")
+    video = repository.create_pending_video(db_session, camera, "/data/uploads/w.mp4", total_frames=50)
+    db_session.flush()
+    repository.mark_video_failed(db_session, video, "could not open source")
+
+    response = client.get(f"/videos/{video.id}/status")
+    body = response.json()
+    assert body["status"] == "failed"
+    assert body["error_message"] == "could not open source"
+
+
+def test_get_video_status_unknown_id_returns_404(client):
+    response = client.get("/videos/999999/status")
+    assert response.status_code == 404
+
+
 # --- GET /objects/{id}/trajectory ---
 
 

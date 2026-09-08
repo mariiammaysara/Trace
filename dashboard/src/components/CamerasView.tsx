@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { EventBadge } from '@/components/EventBadge'
+import { UploadVideoModal } from '@/components/UploadVideoModal'
+import { RecentUploadsPanel, type UploadEntry } from '@/components/RecentUploadsPanel'
 import { listCameraEvents, listCameraObjects, listVideos } from '@/lib/api'
-import type { Camera, TraceEvent } from '@/lib/api'
+import type { Camera, TraceEvent, Video as ApiVideo } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { Video, MapPin, CheckCircle2, PlayCircle } from 'lucide-react'
+import { Video, MapPin, CheckCircle2, PlayCircle, UploadCloud } from 'lucide-react'
 
 interface CamerasViewProps {
   cameras: Camera[]
   selectedCameraId: string | null
   onSelectCamera: (cameraId: string | null) => void
   onNavigateToLive?: () => void
+  uploads?: UploadEntry[]
+  onVideoUploaded?: (video: ApiVideo, cameraId: string, filename: string) => void
 }
 
 interface CameraStats {
@@ -30,9 +34,22 @@ interface CameraStats {
  * every other view. There is no per-camera health/FPS field in the backend
  * schema, so this deliberately does not show one rather than fabricate it.
  */
-export function CamerasView({ cameras, selectedCameraId, onSelectCamera, onNavigateToLive }: CamerasViewProps) {
+export function CamerasView({
+  cameras,
+  selectedCameraId,
+  onSelectCamera,
+  onNavigateToLive,
+  uploads = [],
+  onVideoUploaded,
+}: CamerasViewProps) {
   const [stats, setStats] = useState<Record<string, CameraStats>>({})
   const [error, setError] = useState<string | null>(null)
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+
+  function handleViewLive(cameraId: string) {
+    onSelectCamera(cameraId)
+    onNavigateToLive?.()
+  }
 
   useEffect(() => {
     if (cameras.length === 0) return
@@ -68,12 +85,32 @@ export function CamerasView({ cameras, selectedCameraId, onSelectCamera, onNavig
     }
   }, [cameras])
 
+  const uploadButton = (
+    <Button type="button" size="sm" className="gap-1.5" onClick={() => setIsUploadModalOpen(true)}>
+      <UploadCloud className="h-3.5 w-3.5" />
+      Upload Video
+    </Button>
+  )
+
+  const uploadModal = (
+    <UploadVideoModal
+      isOpen={isUploadModalOpen}
+      onClose={() => setIsUploadModalOpen(false)}
+      onUploaded={(video, cameraId, filename) => onVideoUploaded?.(video, cameraId, filename)}
+    />
+  )
+
   if (cameras.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-surface-alt/30 py-10 text-center">
-        <Video className="h-6 w-6 text-ink-disabled" />
-        <p className="text-sm font-semibold text-ink">No cameras registered</p>
-        <p className="text-xs text-ink-subtle">Register a camera on the backend to see it here.</p>
+      <div className="flex flex-col gap-4 max-w-4xl">
+        <div className="flex justify-end">{uploadButton}</div>
+        <RecentUploadsPanel uploads={uploads} onViewLive={handleViewLive} />
+        <div className="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-surface-alt/30 py-10 text-center">
+          <Video className="h-6 w-6 text-ink-disabled" />
+          <p className="text-sm font-semibold text-ink">No cameras registered</p>
+          <p className="text-xs text-ink-subtle">Upload a video to register your first camera, or register one on the backend.</p>
+        </div>
+        {uploadModal}
       </div>
     )
   }
@@ -85,6 +122,10 @@ export function CamerasView({ cameras, selectedCameraId, onSelectCamera, onNavig
           {error}
         </div>
       )}
+
+      <div className="flex justify-end">{uploadButton}</div>
+
+      <RecentUploadsPanel uploads={uploads} onViewLive={handleViewLive} />
 
       <div className="flex items-center gap-4 px-3.5 text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">
         <span className="flex-1">Camera</span>
@@ -177,6 +218,7 @@ export function CamerasView({ cameras, selectedCameraId, onSelectCamera, onNavig
           )
         })}
       </div>
+      {uploadModal}
     </div>
   )
 }

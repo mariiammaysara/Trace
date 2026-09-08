@@ -29,30 +29,14 @@ const STATE_CLASSES: Record<ViolationState, string> = {
   danger: 'stroke-danger fill-danger/15',
 }
 
-/** Soft outer glow per state, keyed to the same token the stroke already
- * uses -- referencing the CSS variable (not a literal hex) so this stays a
- * theme value, not a hardcoded color. */
-const STATE_GLOW: Record<ViolationState, string> = {
-  normal: 'drop-shadow-[0_0_3px_var(--color-accent)]',
-  warning: 'drop-shadow-[0_0_3px_var(--color-warning)]',
-  danger: 'drop-shadow-[0_0_4px_var(--color-danger)]',
-}
-
-/** Tag chip border (on the background rect) and text color (on the label
- * itself) per state -- same semantic mapping as STATE_CLASSES, just split
- * since the rect and the text need different fill/stroke roles. */
-const STATE_LABEL_BORDER: Record<ViolationState, string> = {
-  normal: 'stroke-accent/40',
-  warning: 'stroke-warning/40',
-  danger: 'stroke-danger/40',
-}
-const STATE_LABEL_TEXT: Record<ViolationState, string> = {
-  normal: 'fill-accent',
-  warning: 'fill-warning',
-  danger: 'fill-danger',
-}
-
 const TRAIL_WINDOW_SECONDS = 3
+
+/** Title-cases a class name for display only ("car" -> "Car") -- a display
+ * transform, not a data change; the real value from the tracker is untouched
+ * everywhere else it's used (labels, links, exports). */
+function titleCase(value: string): string {
+  return value.length > 0 ? value[0].toUpperCase() + value.slice(1) : value
+}
 
 /**
  * SVG overlay absolutely positioned over the <video>, synced to its
@@ -111,8 +95,8 @@ export function VideoOverlay({
           y1={line.start[1]}
           x2={line.end[0]}
           y2={line.end[1]}
-          className="stroke-accent drop-shadow-[0_0_3px_var(--color-accent)]"
-          strokeWidth={3}
+          className="stroke-accent"
+          strokeWidth={2}
         />
       ))}
 
@@ -133,7 +117,6 @@ export function VideoOverlay({
             key={trajectory.object_id}
             className={cn(
               STATE_CLASSES[state],
-              STATE_GLOW[state],
               'transition-colors duration-200 ease-out',
               onSelectObject && 'pointer-events-auto cursor-pointer',
             )}
@@ -181,16 +164,20 @@ export function VideoOverlay({
                     y={nearest.y_min}
                     width={nearest.x_max - nearest.x_min}
                     height={nearest.y_max - nearest.y_min}
-                    strokeWidth={1.5}
+                    strokeWidth={1}
                   />
                 ) : (
-                  <circle cx={nearest.x} cy={nearest.y} r={6} strokeWidth={1.5} />
+                  <circle cx={nearest.x} cy={nearest.y} r={6} strokeWidth={1} />
                 )}
                 {(() => {
                   const labelX = nearest.x_min ?? nearest.x
                   const labelY = (nearest.y_min ?? nearest.y) - 8
+                  // Neutral chip regardless of violation state -- only the
+                  // box itself (STATE_CLASSES above) carries state color;
+                  // the floating label stays calm/legible, matching
+                  // "text-zinc-300, border-white/10" for every state.
                   const label = [
-                    `#${trajectory.object_id} ${trajectory.class_name}`,
+                    `#${trajectory.object_id} ${titleCase(trajectory.class_name)}`,
                     pixelSpeed !== null ? `${Math.round(pixelSpeed)}px/s` : null,
                   ]
                     .filter(Boolean)
@@ -204,14 +191,14 @@ export function VideoOverlay({
                         width={labelWidth}
                         height={17}
                         rx={3}
-                        className={cn('fill-primary/85', STATE_LABEL_BORDER[state])}
+                        className="fill-primary/80 stroke-border"
                         strokeWidth={1}
                       />
                       <text
                         x={labelX + 5}
                         y={labelY - 1}
                         fontSize={11}
-                        className={cn('stroke-none font-medium font-mono tabular-nums', STATE_LABEL_TEXT[state])}
+                        className="stroke-none font-medium font-mono tabular-nums fill-ink-on-dark-quiet"
                       >
                         {label}
                       </text>

@@ -16,22 +16,26 @@ const mockEvent: TraceEvent = {
 }
 
 describe('IncidentCard', () => {
-  it('renders severity badge, target id/class, and exact timestamp', () => {
+  it('renders timestamp, event type (colored by real severity), and target id/class on one line', () => {
     render(<IncidentCard event={mockEvent} />)
 
-    const badge = screen.getByText('LINE_CROSSED')
-    expect(badge).toHaveAttribute('data-severity', 'danger')
+    expect(screen.getByText('9.5s')).toBeInTheDocument()
+    const eventType = screen.getByText('LINE_CROSSED')
+    expect(eventType).toHaveClass('text-danger')
     expect(screen.getByText('#134')).toBeInTheDocument()
     expect(screen.getByText(/car/)).toBeInTheDocument()
-    expect(screen.getByText('t=9.5s')).toBeInTheDocument()
-    expect(screen.getByText('crosswalk_tripwire')).toBeInTheDocument()
+  })
+
+  it('colors a warning-tier event type differently from a danger-tier one', () => {
+    render(<IncidentCard event={{ ...mockEvent, event_type: 'LOITERING' }} />)
+    expect(screen.getByText('LOITERING')).not.toHaveClass('text-danger')
   })
 
   it('calls onSelect when the row is clicked', () => {
     const onSelect = vi.fn()
     render(<IncidentCard event={mockEvent} onSelect={onSelect} />)
 
-    const row = screen.getByText('t=9.5s').closest('[role="button"]')
+    const row = screen.getByText('9.5s').closest('[role="button"]')
     expect(row).not.toBeNull()
     fireEvent.click(row as HTMLElement)
     expect(onSelect).toHaveBeenCalledWith(mockEvent)
@@ -44,13 +48,5 @@ describe('IncidentCard', () => {
     fireEvent.click(screen.getByRole('button', { name: /Replay incident at 9.5 seconds/i }))
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith(mockEvent)
-  })
-
-  it('shows a real km/h figure only when the event actually carries a speed in its metadata', () => {
-    const { rerender } = render(<IncidentCard event={mockEvent} />)
-    expect(screen.queryByText(/km\/h/)).not.toBeInTheDocument()
-
-    rerender(<IncidentCard event={{ ...mockEvent, metadata: { speed: 42.4 } }} />)
-    expect(screen.getByText('42 km/h')).toBeInTheDocument()
   })
 })

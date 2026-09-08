@@ -12,50 +12,55 @@
  */
 
 :root {
-  /* Brand -- full replacement of the earlier light "blue-black + white +
-     baby blue" identity (#0a0e1a/#2d3f5c/#4a90c2/#eaf4fd/#d6e9f8/#ffffff) with
-     the confirmed "Tactical Cyber-Slate" dark identity: a near-black
-     operations console with a neon-cyan functional accent, built for
-     high-contrast video/spatial-overlay viewing rather than a paper-white
-     admin template. Do not reintroduce the old light values. */
-  --color-primary: #10141a; /* elevated dark layer -- sidebar, header, primary nav chrome */
-  --color-secondary: #0fb8c9; /* deep cyan-teal -- solid buttons, active states, secondary emphasis */
-  --color-accent: #00f0ff; /* neon cyan -- spatial tracking, chart accents, highlights, hover/focus glow */
-  --color-surface-alt: #161c28; /* subtle panel/hover tint, one step up from --color-surface */
-  --color-border: #1e2638; /* hairline borders, dividers, card edges */
-  --color-background: #090b0e; /* deep tactical black -- main app stage background */
-  --color-surface: #131822; /* card & panel background (elevated surfaces on top of background) */
+  /* Brand -- full replacement of the "Tactical Cyber-Slate" neon identity
+     (#10141a/#0fb8c9/#00f0ff/#161c28/#1e2638/#090b0e/#131822) with a calm,
+     restrained "Neutral Obsidian" identity: near-monochrome zinc surfaces,
+     a single reserved cyan accent (selection/reticles/active tabs only --
+     never general chrome), and no decorative glow. Do not reintroduce the
+     neon values or add glow/drop-shadow/ping effects back once removed.
+     --color-secondary is deliberately a light NEUTRAL now (not cyan) --
+     "90% of the UI must be monochromatic," so the one solid interactive
+     button color is a clean off-white, not a brand-colored fill; cyan
+     stays reserved for the telemetry accent role described below. */
+  --color-primary: #0d0f14; /* surface layer 1 -- sidebar, header chrome */
+  --color-secondary: #e4e4e7; /* neutral light -- the one solid button fill (dark text on top) */
+  --color-accent: #06b6d4; /* cyan -- RESERVED: selected objects, video reticles, active tabs. Never
+     general UI decoration -- see the 90/10 rule this token exists to enforce. */
+  --color-surface-alt: #181c24; /* surface elevated -- modals, subtle panel/hover backgrounds */
+  --color-border: #202329; /* hairline dividers -- flattened equivalent of white at 6% opacity over
+     --color-surface, kept as a solid hex so existing border-border/NN opacity modifiers still
+     compose correctly instead of double-fading an already-transparent value */
+  --color-background: #090a0d; /* app background */
+  --color-surface: #12151b; /* surface layer 2 -- cards, video stage */
 
   /* Semantic states -- reserved for event badges, alert toasts, status dots,
      and any chart series that specifically represents violations vs normal
      activity. Everything else (nav, buttons, cards, default chart series,
      borders) uses the brand palette above, not these. */
-  --color-success: #00e599; /* emerald/mint -- system health, resolved incidents */
-  --color-warning: #ffb703; /* amber/gold -- approaching a threshold, stationary/loitering */
-  --color-danger: #ff0055; /* crimson -- OVERSPEED, ZONE_ENTERED on a restricted zone, any violation */
-  --color-info: #5ea8c7; /* muted cyan-slate -- neutral informational states, deliberately less vivid
-     than --color-accent so a plain "info" badge never reads as an active tracking highlight */
+  --color-success: #10b981; /* soft green -- system health, resolved incidents (a discreet dot, not a badge) */
+  --color-warning: #ffb703; /* amber -- approaching a threshold, stationary/loitering (unchanged) */
+  --color-danger: #f43f5e; /* rose -- strictly confirmed violations (LINE_CROSSED, OVERSPEED, ...) */
+  --color-info: #5ea8c7; /* muted slate-blue -- neutral informational states, deliberately not the
+     reserved accent cyan (unchanged) */
 
   /*
-   * Text hierarchy ("ink" scale) -- on a fully dark shell, --text-primary can
-   * no longer just alias --color-primary the way the light theme did (that
-   * only worked because the darkest brand tone doubled as the darkest
-   * possible text-on-white). --color-primary is now a dark SURFACE tone
-   * (sidebar chrome), which would be invisible as text on an equally-dark
-   * background -- so this tier gets its own literal light values instead.
-   * Ratios below are against --color-surface (#131822), computed with the
-   * WCAG relative-luminance formula -- re-check if either endpoint changes.
+   * Text hierarchy ("ink" scale). Ratios below are against --color-surface
+   * (#12151b), computed with the WCAG relative-luminance formula -- re-check
+   * if either endpoint changes. text-tertiary (zinc-500, ~4.1:1) is a
+   * deliberate choice for micro metadata/labels at small sizes, matching
+   * this design system's own spec verbatim -- slightly under the 4.5:1 body
+   * text floor, which is why it's reserved for labels/timestamps, never
+   * primary content.
    */
-  --text-primary: #edf2f5; /* ~15.8:1. Headings, KPI values, high-emphasis body. */
-  --text-secondary: #9facbd; /* ~7.7:1. The default body/UI text color -- nav labels, section titles, most copy. */
-  --text-tertiary: #7c879a; /* ~4.9:1. De-emphasized metadata: timestamps, fine print, hints. Still always legible. */
-  --text-disabled: #5a6478; /* ~3.0:1. Reserved for genuinely disabled controls only -- never for normal quiet text. */
+  --text-primary: #f4f4f5; /* zinc-100, ~16.6:1. Screen headers, KPI/data-point values. */
+  --text-secondary: #d4d4d8; /* zinc-300, ~12.4:1. Default body/UI text -- nav labels, section titles, most copy. */
+  --text-tertiary: #71717a; /* zinc-500, ~3.8:1. Micro metadata: labels, units, timestamps. */
+  --text-disabled: #52525b; /* zinc-600, ~2.4:1. Reserved for genuinely disabled controls only. */
 
-  /* Same four-tier idea, for the sidebar/HUD surfaces that sit on
-     --color-primary (#10141a) instead of --color-surface. Slightly higher
-     contrast than the tier above since --color-primary is a touch darker
-     than --color-surface. */
-  --text-on-dark: #f5fafb; /* ~17.6:1. Wordmark, active nav label, high-emphasis text on chrome. */
-  --text-on-dark-quiet: #aebacb; /* ~9.4:1. Default nav-label/body text on chrome. */
-  --text-on-dark-subtle: #727e8f; /* ~4.5:1. De-emphasized captions on chrome (section eyebrows, footnotes). */
+  /* Same tiers, for the sidebar/HUD surfaces that sit on --color-primary
+     (#0d0f14) -- nearly identical darkness to --color-surface now, so these
+     converge on the same values rather than needing a separately-tuned set. */
+  --text-on-dark: #f4f4f5;
+  --text-on-dark-quiet: #d4d4d8;
+  --text-on-dark-subtle: #71717a;
 }

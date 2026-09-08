@@ -46,6 +46,31 @@ class VideoRead(BaseModel):
     camera_id: int
     path: str
     started_at: Optional[dt.datetime] = None
+    status: str = "done"
+    total_frames: Optional[int] = None
+    frames_processed: int = 0
+    current_fps: Optional[float] = None
+    error_message: Optional[str] = None
+
+
+class VideoStatusRead(BaseModel):
+    """GET /videos/{id}/status -- every field here is either a stored column
+    or computed directly from two stored columns (percent, eta_seconds).
+    Nothing here is a simulated/guessed number: percent is None until
+    total_frames is known (always is, for an upload -- read from the file
+    itself before the row exists) and eta_seconds is None until current_fps
+    has a real measurement (see MIN_FRAMES_FOR_FPS_ESTIMATE in
+    api/routers/videos.py -- an ETA from a 1-2 frame sample is noise, not a
+    real estimate, so it's omitted rather than shown looking precise."""
+
+    id: int
+    status: str
+    total_frames: Optional[int] = None
+    frames_processed: int = 0
+    percent: Optional[float] = None
+    current_fps: Optional[float] = None
+    eta_seconds: Optional[float] = None
+    error_message: Optional[str] = None
 
 
 class ZoneCreate(BaseModel):
