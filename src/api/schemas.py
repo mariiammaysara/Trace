@@ -33,6 +33,33 @@ class CameraRead(BaseModel):
     calibration_reference: Optional[str] = None
 
 
+class CameraDeletionCounts(BaseModel):
+    """Real per-table counts -- shared shape between the read-only preview
+    (GET .../deletion-preview, computed with COUNT queries, nothing deleted)
+    and the actual delete response (DELETE ..., the real number of rows each
+    DELETE statement removed). Never a fabricated/estimated number in either
+    case -- see database/repository.py's count_camera_dependents and
+    delete_camera_cascade."""
+
+    alerts: int
+    events: int
+    track_points: int
+    objects: int
+    videos: int
+    zones: int
+    lines: int
+
+
+class CameraDeletionPreviewRead(BaseModel):
+    camera_id: str
+    counts: CameraDeletionCounts
+
+
+class CameraDeleteRead(BaseModel):
+    camera_id: str
+    deleted: CameraDeletionCounts
+
+
 class VideoCreate(BaseModel):
     camera_id: str = Field(..., min_length=1)
     path: str = Field(..., min_length=1)

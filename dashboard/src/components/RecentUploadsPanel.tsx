@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { useVideoStatus } from '@/hooks/useVideoStatus'
 import { cn } from '@/lib/utils'
-import { CheckCircle2, XCircle, Loader2, Clock, PlayCircle } from 'lucide-react'
+import { CheckCircle2, XCircle, Loader2, Clock, PlayCircle, Trash2 } from 'lucide-react'
 
 export interface UploadEntry {
   videoId: number
@@ -13,6 +13,11 @@ export interface UploadEntry {
 interface RecentUploadsPanelProps {
   uploads: UploadEntry[]
   onViewLive: (cameraId: string) => void
+  /** Opens the shared DeleteCameraDialog (hosted by the parent) for this
+   * upload's camera -- deleting here deletes the whole camera, same real
+   * DELETE /cameras/{camera_id} as Camera Fleet's own delete action, not a
+   * video-only removal. */
+  onRequestDelete: (cameraId: string) => void
 }
 
 function formatEta(seconds: number): string {
@@ -22,7 +27,15 @@ function formatEta(seconds: number): string {
   return `${minutes}m ${remainder}s`
 }
 
-function UploadRow({ upload, onViewLive }: { upload: UploadEntry; onViewLive: (cameraId: string) => void }) {
+function UploadRow({
+  upload,
+  onViewLive,
+  onRequestDelete,
+}: {
+  upload: UploadEntry
+  onViewLive: (cameraId: string) => void
+  onRequestDelete: (cameraId: string) => void
+}) {
   const { status, error } = useVideoStatus(upload.videoId)
 
   const state = status?.status ?? 'pending'
@@ -57,6 +70,16 @@ function UploadRow({ upload, onViewLive }: { upload: UploadEntry; onViewLive: (c
             View Live
           </Button>
         )}
+        <Button
+          type="button"
+          size="icon-xs"
+          variant="outline"
+          aria-label={`Delete camera ${upload.cameraId}`}
+          className="text-ink-subtle hover:text-danger hover:border-danger/40"
+          onClick={() => onRequestDelete(upload.cameraId)}
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
       </div>
 
       {state === 'processing' && status && status.total_frames && (
@@ -97,7 +120,7 @@ function UploadRow({ upload, onViewLive }: { upload: UploadEntry; onViewLive: (c
  * processing and coming back doesn't lose track of it. Each row polls its
  * own real status independently via useVideoStatus.
  */
-export function RecentUploadsPanel({ uploads, onViewLive }: RecentUploadsPanelProps) {
+export function RecentUploadsPanel({ uploads, onViewLive, onRequestDelete }: RecentUploadsPanelProps) {
   if (uploads.length === 0) return null
 
   const sorted = [...uploads].sort((a, b) => b.createdAt - a.createdAt)
@@ -109,7 +132,7 @@ export function RecentUploadsPanel({ uploads, onViewLive }: RecentUploadsPanelPr
       </span>
       <div className="rounded-lg border border-border bg-surface divide-y divide-border overflow-hidden">
         {sorted.map((upload) => (
-          <UploadRow key={upload.videoId} upload={upload} onViewLive={onViewLive} />
+          <UploadRow key={upload.videoId} upload={upload} onViewLive={onViewLive} onRequestDelete={onRequestDelete} />
         ))}
       </div>
     </div>

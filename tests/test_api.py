@@ -73,6 +73,141 @@ def test_list_cameras_empty_is_still_200(client):
     assert isinstance(response.json(), list)
 
 
+# --- GET /cameras/{camera_id}/deletion-preview, DELETE /cameras/{camera_id} ---
+
+
+def _seed_full_camera_graph(db_session, camera_id: str):
+    """One camera with one of everything a delete cascade has to reach:
+    a zone, a line, a tracked object with a track point, a ZONE_ENTERED event
+    (through the zone) and a LINE_CROSSED event (through the line), an alert
+    tied to one of those events, and a video. Real FK graph, not a subset --
+    if the delete cascade gets the order wrong, this is what would 500."""
+    camera = repository.get_or_create_camera(db_session, camera_id)
+    zone = repository.get_or_create_zone(db_session, camera, "z1", [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)])
+    line = repository.get_or_create_line(db_session, camera, "l1", (0.0, 5.0), (10.0, 5.0))
+    obj = repository.get_or_create_object(db_session, camera, object_id=1, class_name="car", timestamp=0.0)
+    repository.add_track_point(db_session, obj, frame_id=0, timestamp=0.0, x=1.0, y=1.0)
+
+    zone_event = repository.add_event_from_pipeline(
+        db_session, camera,
+        PipelineEvent(
+            event_type="ZONE_ENTERED", object_id=1, class_name="car",
+            timestamp=1.0, camera_id=camera_id, confidence=0.9, metadata={"zone_id": "z1"},
+        ),
+    )
+    repository.add_event_from_pipeline(
+        db_session, camera,
+        PipelineEvent(
+            event_type="LINE_CROSSED", object_id=1, class_name="car",
+            timestamp=2.0, camera_id=camera_id, confidence=0.9,
+            metadata={"line_id": "l1", "direction": "left_to_right", "side_before": 1, "side_after": -1},
+        ),
+    )
+    repository.create_alert(db_session, camera, event_type="ZONE_ENTERED", message="test alert", event=zone_event)
+    repository.create_video(db_session, camera, f"/data/{camera_id}.mp4")
+    db_session.flush()
+    return camera, zone, line, obj
+
+
+def test_get_camera_deletion_preview_reports_real_counts(client, db_session):
+    _seed_full_camera_graph(db_session, "cam_preview")
+
+    response = client.get("/cameras/cam_preview/deletion-preview")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["camera_id"] == "cam_preview"
+    assert body["counts"] == {
+        "alerts": 1, "events": 2, "track_points": 1, "objects": 1, "videos": 1, "zones": 1, "lines": 1,
+    }
+
+
+def test_get_camera_deletion_preview_does_not_delete_anything(client, db_session):
+    _seed_full_camera_graph(db_session, "cam_preview_readonly")
+    client.get("/cameras/cam_preview_readonly/deletion-preview")
+
+    # still there -- a preview must never be destructive
+    response = client.get("/cameras/cam_preview_readonly/events")
+    assert len(response.json()) == 2
+
+
+def test_get_camera_deletion_preview_unknown_camera_returns_404(client):
+    response = client.get("/cameras/nonexistent/deletion-preview")
+    assert response.status_code == 404
+
+
+def test_delete_camera_cascades_and_reports_real_counts(client, db_session):
+    _seed_full_camera_graph(db_session, "cam_delete_me")
+
+    response = client.delete("/cameras/cam_delete_me")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["camera_id"] == "cam_delete_me"
+    assert body["deleted"] == {
+        "alerts": 1, "events": 2, "track_points": 1, "objects": 1, "videos": 1, "zones": 1, "lines": 1,
+    }
+
+    assert repository.get_camera(db_session, "cam_delete_me") is None
+    assert client.get("/cameras/cam_delete_me/deletion-preview").status_code == 404
+
+
+def test_delete_camera_does_not_touch_other_cameras(client, db_session):
+    _seed_full_camera_graph(db_session, "cam_delete_target")
+    _seed_full_camera_graph(db_session, "cam_delete_bystander")
+
+    response = client.delete("/cameras/cam_delete_target")
+    assert response.status_code == 200
+
+    # the untouched camera's full graph must still be exactly as seeded
+    bystander_response = client.get("/cameras/cam_delete_bystander/deletion-preview")
+    assert bystander_response.status_code == 200
+    assert bystander_response.json()["counts"] == {
+        "alerts": 1, "events": 2, "track_points": 1, "objects": 1, "videos": 1, "zones": 1, "lines": 1,
+    }
+
+
+def test_delete_camera_unknown_camera_returns_404_not_silent_noop(client):
+    response = client.delete("/cameras/nonexistent")
+    assert response.status_code == 404
+
+
+def test_delete_camera_failure_partway_through_leaves_no_partial_state(client, db_session, monkeypatch):
+    """A real transaction-safety proof: force the cascade to blow up after
+    alerts/events are already deleted (in-memory, not yet committed) but
+    before track_points/objects/videos/zones/lines/the camera row -- then
+    confirm the endpoint's rollback actually restored everything, not just
+    that it returned an error status."""
+    from api.routers import cameras as cameras_router
+
+    _seed_full_camera_graph(db_session, "cam_txn_safety")
+    # Commits the seed data as a real baseline first -- otherwise the seed
+    # data and the delete attempt below would share the same open
+    # transaction/savepoint, and the delete's own rollback would wipe out
+    # the seed data too (indistinguishable from a genuine partial-delete
+    # bug). A real client's seed data is always already committed before
+    # someone clicks delete, so this matches the real scenario.
+    db_session.commit()
+
+    def broken_delete_camera_cascade(session, camera):
+        repository.count_camera_dependents(session, camera)  # harmless, just to touch the session first
+        session.execute(repository.delete(repository.Alert).where(repository.Alert.camera_id == camera.id))
+        session.execute(repository.delete(repository.Event).where(repository.Event.camera_id == camera.id))
+        raise RuntimeError("simulated failure partway through the cascade")
+
+    monkeypatch.setattr(cameras_router.repository, "delete_camera_cascade", broken_delete_camera_cascade)
+
+    response = client.delete("/cameras/cam_txn_safety")
+    assert response.status_code == 500
+
+    # rolled back -- the alerts/events that broken_delete_camera_cascade
+    # already issued DELETE statements for (but never committed) must be
+    # back, proving this was a real rollback, not just an error response.
+    preview = client.get("/cameras/cam_txn_safety/deletion-preview")
+    assert preview.status_code == 200
+    assert preview.json()["counts"] == {
+        "alerts": 1, "events": 2, "track_points": 1, "objects": 1, "videos": 1, "zones": 1, "lines": 1,
+    }
+
+
 # --- GET /cameras/{camera_id}/zones, GET /cameras/{camera_id}/lines ---
 
 

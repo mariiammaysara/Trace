@@ -150,8 +150,51 @@ async function apiPost<T>(path: string, payload: unknown): Promise<T> {
   return response.json() as Promise<T>
 }
 
+async function apiDelete<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { method: 'DELETE' })
+  if (!response.ok) {
+    throw new Error(await readErrorDetail(response))
+  }
+  return response.json() as Promise<T>
+}
+
 export function listCameras(): Promise<Camera[]> {
   return apiGet<Camera[]>('/cameras')
+}
+
+/**
+ * Real per-table counts of everything a camera delete would remove --
+ * shared shape between GET .../deletion-preview (read-only, nothing
+ * deleted) and the DELETE response (the real number of rows removed).
+ * See src/api/schemas.py's CameraDeletionCounts.
+ */
+export interface CameraDeletionCounts {
+  alerts: number
+  events: number
+  track_points: number
+  objects: number
+  videos: number
+  zones: number
+  lines: number
+}
+
+/** GET /cameras/{camera_id}/deletion-preview -- fetched before showing a
+ * delete confirmation dialog, so the numbers it displays are real, never
+ * fabricated. Deletes nothing. */
+export function getCameraDeletionPreview(cameraId: string): Promise<CameraDeletionCounts> {
+  return apiGet<{ camera_id: string; counts: CameraDeletionCounts }>(
+    `/cameras/${encodeURIComponent(cameraId)}/deletion-preview`,
+  ).then((result) => result.counts)
+}
+
+/** DELETE /cameras/{camera_id} -- cascades through every real dependent row
+ * (alerts, events, track_points, objects, videos, zones, lines) in one
+ * all-or-nothing transaction server-side. Returns the real counts of what
+ * was actually deleted. */
+export function deleteCamera(cameraId: string): Promise<CameraDeletionCounts> {
+  return apiDelete<{ camera_id: string; deleted: CameraDeletionCounts }>(
+    `/cameras/${encodeURIComponent(cameraId)}`,
+  ).then((result) => result.deleted)
 }
 
 export function listVideos(cameraId?: string): Promise<Video[]> {

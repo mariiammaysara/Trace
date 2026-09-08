@@ -106,6 +106,20 @@ function App() {
     fetchCameras()
   }
 
+  function handleCameraDeleted(cameraId: string) {
+    // Drop any Recent Uploads entries pointing at the now-deleted camera --
+    // their video row is gone too (cascaded server-side), so polling their
+    // status would just 404 forever.
+    setUploads((current) => current.filter((upload) => upload.cameraId !== cameraId))
+    // Clear the selection if it was the deleted camera -- whatever view is
+    // currently showing it (Live, Analytics, Investigation) reads
+    // selectedCameraId as a prop, so this is the real "redirect away":
+    // fetchCameras() below picks a fresh default once the updated camera
+    // list comes back, same as on initial load.
+    setSelectedCameraId((current) => (current === cameraId ? null : current))
+    fetchCameras()
+  }
+
   const fetchCameras = () => {
     setIsRefreshing(true)
     listCameras()
@@ -251,6 +265,7 @@ function App() {
               onNavigateToLive={() => setActiveView('live')}
               uploads={uploads}
               onVideoUploaded={handleVideoUploaded}
+              onCameraDeleted={handleCameraDeleted}
             />
           )}
           {activeView === 'events' && (

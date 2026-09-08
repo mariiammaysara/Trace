@@ -8,13 +8,23 @@ function upload(overrides: Partial<UploadEntry> = {}): UploadEntry {
   return { videoId: 1, cameraId: 'cam_a', filename: 'clip.mp4', createdAt: Date.now(), ...overrides }
 }
 
+function renderPanel(uploads: UploadEntry[], overrides: { onViewLive?: () => void; onRequestDelete?: (cameraId: string) => void } = {}) {
+  return render(
+    <RecentUploadsPanel
+      uploads={uploads}
+      onViewLive={overrides.onViewLive ?? vi.fn()}
+      onRequestDelete={overrides.onRequestDelete ?? vi.fn()}
+    />,
+  )
+}
+
 describe('RecentUploadsPanel', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
   })
 
   it('renders nothing when there are no uploads', () => {
-    const { container } = render(<RecentUploadsPanel uploads={[]} onViewLive={vi.fn()} />)
+    const { container } = renderPanel([])
     expect(container).toBeEmptyDOMElement()
   })
 
@@ -24,7 +34,7 @@ describe('RecentUploadsPanel', () => {
       percent: 0, current_fps: null, eta_seconds: null, error_message: null,
     })
 
-    render(<RecentUploadsPanel uploads={[upload()]} onViewLive={vi.fn()} />)
+    renderPanel([upload()])
 
     expect(await screen.findByText('pending')).toBeInTheDocument()
     expect(screen.getByText('clip.mp4')).toBeInTheDocument()
@@ -36,7 +46,7 @@ describe('RecentUploadsPanel', () => {
       percent: 25, current_fps: 10, eta_seconds: 7.5, error_message: null,
     })
 
-    render(<RecentUploadsPanel uploads={[upload()]} onViewLive={vi.fn()} />)
+    renderPanel([upload()])
 
     expect(await screen.findByText('processing')).toBeInTheDocument()
     expect(screen.getByText('25 / 100 frames')).toBeInTheDocument()
@@ -52,7 +62,7 @@ describe('RecentUploadsPanel', () => {
     const onViewLive = vi.fn()
     const user = userEvent.setup()
 
-    render(<RecentUploadsPanel uploads={[upload({ cameraId: 'cam_done' })]} onViewLive={onViewLive} />)
+    renderPanel([upload({ cameraId: 'cam_done' })], { onViewLive })
 
     const viewLiveBtn = await screen.findByRole('button', { name: /View Live/i })
     await user.click(viewLiveBtn)
@@ -66,7 +76,7 @@ describe('RecentUploadsPanel', () => {
       error_message: 'could not open frame source',
     })
 
-    render(<RecentUploadsPanel uploads={[upload()]} onViewLive={vi.fn()} />)
+    renderPanel([upload()])
 
     expect(await screen.findByText('failed')).toBeInTheDocument()
     expect(screen.getByText('could not open frame source')).toBeInTheDocument()
@@ -75,8 +85,23 @@ describe('RecentUploadsPanel', () => {
   it('surfaces a fetch failure without crashing the panel', async () => {
     vi.spyOn(api, 'getVideoStatus').mockRejectedValue(new Error('network error'))
 
-    render(<RecentUploadsPanel uploads={[upload()]} onViewLive={vi.fn()} />)
+    renderPanel([upload()])
 
     await waitFor(() => expect(screen.getByText(/Couldn't reach status endpoint/i)).toBeInTheDocument())
+  })
+
+  it('clicking the delete button requests deletion of the underlying camera, not just the upload row', async () => {
+    vi.spyOn(api, 'getVideoStatus').mockResolvedValue({
+      id: 1, status: 'done', total_frames: 100, frames_processed: 100,
+      percent: 100, current_fps: 12.3, eta_seconds: null, error_message: null,
+    })
+    const onRequestDelete = vi.fn()
+    const user = userEvent.setup()
+
+    renderPanel([upload({ cameraId: 'cam_to_delete' })], { onRequestDelete })
+
+    const deleteBtn = await screen.findByRole('button', { name: /Delete camera cam_to_delete/i })
+    await user.click(deleteBtn)
+    expect(onRequestDelete).toHaveBeenCalledWith('cam_to_delete')
   })
 })

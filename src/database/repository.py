@@ -9,11 +9,77 @@ from __future__ import annotations
 import datetime as dt
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from database.models import Alert, Camera, Event, Line, PendingAction, TrackedObject, TrackPoint, Video, Zone
 from events.event import Event as PipelineEvent
+
+# The real FK chain a camera sits at the root of (checked against models.py,
+# not assumed): Alert.event_id -> Event.id, Event.{object_id,zone_id,line_id}
+# -> TrackedObject/Zone/Line.id, TrackPoint.object_id -> TrackedObject.id,
+# and Video/Zone/Line/TrackedObject/Event/Alert.camera_id -> Camera.id.
+# Deleting in this order (children before parents) never violates a FK
+# constraint: alerts first (they're the only thing that can reference an
+# event), then events (referenced by nothing else here), then track_points
+# (reference objects), then objects/videos/zones/lines (all reference only
+# the camera, now safe since nothing above still points at them), then the
+# camera row itself last. PendingAction is deliberately not part of this --
+# it has no real FK to a camera (a camera_id a proposed action mentions
+# lives only inside its free-form `parameters` JSON, not a foreign key).
+
+
+def _camera_dependent_object_ids(session: Session, camera: Camera) -> List[int]:
+    return list(session.execute(select(TrackedObject.id).where(TrackedObject.camera_id == camera.id)).scalars())
+
+
+def count_camera_dependents(session: Session, camera: Camera) -> Dict[str, int]:
+    """Real, read-only counts of everything a delete would remove -- for a
+    confirmation UI to show before the destructive call, never a guess.
+    Deliberately does not delete anything; see delete_camera_cascade for that."""
+    object_ids = _camera_dependent_object_ids(session, camera)
+    counts = {
+        "alerts": session.execute(select(func.count()).select_from(Alert).where(Alert.camera_id == camera.id)).scalar_one(),
+        "events": session.execute(select(func.count()).select_from(Event).where(Event.camera_id == camera.id)).scalar_one(),
+        "track_points": (
+            session.execute(
+                select(func.count()).select_from(TrackPoint).where(TrackPoint.object_id.in_(object_ids))
+            ).scalar_one()
+            if object_ids else 0
+        ),
+        "objects": len(object_ids),
+        "videos": session.execute(select(func.count()).select_from(Video).where(Video.camera_id == camera.id)).scalar_one(),
+        "zones": session.execute(select(func.count()).select_from(Zone).where(Zone.camera_id == camera.id)).scalar_one(),
+        "lines": session.execute(select(func.count()).select_from(Line).where(Line.camera_id == camera.id)).scalar_one(),
+    }
+    return counts
+
+
+def delete_camera_cascade(session: Session, camera: Camera) -> Dict[str, int]:
+    """Deletes `camera` and everything that references it, in the FK-safe
+    order documented above. Returns real per-table counts of what was
+    deleted (the same shape count_camera_dependents reports beforehand).
+
+    Deliberately does NOT commit or rollback -- that's the caller's
+    responsibility (api/routers/cameras.py's delete_camera wraps this in a
+    single try/commit/except-rollback so the whole cascade is genuinely
+    all-or-nothing, never partial state from a mid-cascade failure).
+    """
+    object_ids = _camera_dependent_object_ids(session, camera)
+
+    counts: Dict[str, int] = {}
+    counts["alerts"] = session.execute(delete(Alert).where(Alert.camera_id == camera.id)).rowcount
+    counts["events"] = session.execute(delete(Event).where(Event.camera_id == camera.id)).rowcount
+    counts["track_points"] = (
+        session.execute(delete(TrackPoint).where(TrackPoint.object_id.in_(object_ids))).rowcount if object_ids else 0
+    )
+    counts["objects"] = session.execute(delete(TrackedObject).where(TrackedObject.camera_id == camera.id)).rowcount
+    counts["videos"] = session.execute(delete(Video).where(Video.camera_id == camera.id)).rowcount
+    counts["zones"] = session.execute(delete(Zone).where(Zone.camera_id == camera.id)).rowcount
+    counts["lines"] = session.execute(delete(Line).where(Line.camera_id == camera.id)).rowcount
+    session.delete(camera)
+    session.flush()
+    return counts
 
 
 def get_or_create_camera(

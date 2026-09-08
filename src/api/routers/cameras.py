@@ -1,7 +1,10 @@
-"""POST /cameras, GET /cameras, GET /cameras/{camera_id}/objects, GET /cameras/{camera_id}/events."""
+"""POST /cameras, GET /cameras, DELETE /cameras/{camera_id},
+GET /cameras/{camera_id}/deletion-preview, GET /cameras/{camera_id}/objects,
+GET /cameras/{camera_id}/events."""
 
 from __future__ import annotations
 
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -9,8 +12,21 @@ from sqlalchemy.orm import Session
 
 from api.common import get_camera_or_404
 from api.deps import get_db
-from api.schemas import AlertRead, CameraCreate, CameraRead, EventRead, LineRead, TrackedObjectRead, ZoneRead
+from api.schemas import (
+    AlertRead,
+    CameraCreate,
+    CameraDeleteRead,
+    CameraDeletionCounts,
+    CameraDeletionPreviewRead,
+    CameraRead,
+    EventRead,
+    LineRead,
+    TrackedObjectRead,
+    ZoneRead,
+)
 from database import repository
+
+logger = logging.getLogger("trace.api")
 
 router = APIRouter(tags=["cameras"])
 
@@ -30,6 +46,38 @@ def create_camera(payload: CameraCreate, session: Session = Depends(get_db)) -> 
     )
     session.commit()
     return CameraRead.model_validate(camera)
+
+
+@router.get("/cameras/{camera_id}/deletion-preview", response_model=CameraDeletionPreviewRead)
+def get_camera_deletion_preview(camera_id: str, session: Session = Depends(get_db)) -> CameraDeletionPreviewRead:
+    """Real, read-only counts of everything DELETE /cameras/{camera_id} would
+    remove -- for the frontend's confirmation dialog to show before the
+    destructive call. Nothing is deleted here."""
+    camera = get_camera_or_404(session, camera_id)
+    counts = repository.count_camera_dependents(session, camera)
+    return CameraDeletionPreviewRead(camera_id=camera_id, counts=CameraDeletionCounts(**counts))
+
+
+@router.delete("/cameras/{camera_id}", response_model=CameraDeleteRead)
+def delete_camera(camera_id: str, session: Session = Depends(get_db)) -> CameraDeleteRead:
+    """Deletes a camera and every row that references it (alerts, events,
+    track_points, objects, videos, zones, lines -- see database/repository.py's
+    delete_camera_cascade for the exact FK-safe order), in one transaction:
+    either the whole cascade commits, or none of it does. Any camera can be
+    deleted here, including demo/demo-trafficlight -- the frontend is where
+    the extra "this is the documented reference camera" confirmation lives,
+    not the API, since a script or another real client hitting this endpoint
+    directly is a deliberate, already-confirmed action.
+    """
+    camera = get_camera_or_404(session, camera_id)
+    try:
+        deleted_counts = repository.delete_camera_cascade(session, camera)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("camera_id=%r delete failed partway through -- rolled back, no partial state", camera_id)
+        raise
+    return CameraDeleteRead(camera_id=camera_id, deleted=CameraDeletionCounts(**deleted_counts))
 
 
 @router.get("/cameras/{camera_id}/zones", response_model=List[ZoneRead])

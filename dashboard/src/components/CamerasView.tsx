@@ -3,10 +3,11 @@ import { Button } from '@/components/ui/button'
 import { EventBadge } from '@/components/EventBadge'
 import { UploadVideoModal } from '@/components/UploadVideoModal'
 import { RecentUploadsPanel, type UploadEntry } from '@/components/RecentUploadsPanel'
+import { DeleteCameraDialog } from '@/components/DeleteCameraDialog'
 import { listCameraEvents, listCameraObjects, listVideos } from '@/lib/api'
-import type { Camera, TraceEvent, Video as ApiVideo } from '@/lib/api'
+import type { Camera, CameraDeletionCounts, TraceEvent, Video as ApiVideo } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { Video, MapPin, CheckCircle2, PlayCircle, UploadCloud } from 'lucide-react'
+import { Video, MapPin, CheckCircle2, PlayCircle, UploadCloud, Trash2 } from 'lucide-react'
 
 interface CamerasViewProps {
   cameras: Camera[]
@@ -15,6 +16,7 @@ interface CamerasViewProps {
   onNavigateToLive?: () => void
   uploads?: UploadEntry[]
   onVideoUploaded?: (video: ApiVideo, cameraId: string, filename: string) => void
+  onCameraDeleted?: (cameraId: string, deleted: CameraDeletionCounts) => void
 }
 
 interface CameraStats {
@@ -41,10 +43,12 @@ export function CamerasView({
   onNavigateToLive,
   uploads = [],
   onVideoUploaded,
+  onCameraDeleted,
 }: CamerasViewProps) {
   const [stats, setStats] = useState<Record<string, CameraStats>>({})
   const [error, setError] = useState<string | null>(null)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+  const [deleteDialogCameraId, setDeleteDialogCameraId] = useState<string | null>(null)
 
   function handleViewLive(cameraId: string) {
     onSelectCamera(cameraId)
@@ -100,17 +104,26 @@ export function CamerasView({
     />
   )
 
+  const deleteDialog = (
+    <DeleteCameraDialog
+      cameraId={deleteDialogCameraId}
+      onClose={() => setDeleteDialogCameraId(null)}
+      onDeleted={(cameraId, deleted) => onCameraDeleted?.(cameraId, deleted)}
+    />
+  )
+
   if (cameras.length === 0) {
     return (
       <div className="flex flex-col gap-4 max-w-4xl">
         <div className="flex justify-end">{uploadButton}</div>
-        <RecentUploadsPanel uploads={uploads} onViewLive={handleViewLive} />
+        <RecentUploadsPanel uploads={uploads} onViewLive={handleViewLive} onRequestDelete={setDeleteDialogCameraId} />
         <div className="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-surface-alt/30 py-10 text-center">
           <Video className="h-6 w-6 text-ink-disabled" />
           <p className="text-sm font-semibold text-ink">No cameras registered</p>
           <p className="text-xs text-ink-subtle">Upload a video to register your first camera, or register one on the backend.</p>
         </div>
         {uploadModal}
+        {deleteDialog}
       </div>
     )
   }
@@ -125,14 +138,14 @@ export function CamerasView({
 
       <div className="flex justify-end">{uploadButton}</div>
 
-      <RecentUploadsPanel uploads={uploads} onViewLive={handleViewLive} />
+      <RecentUploadsPanel uploads={uploads} onViewLive={handleViewLive} onRequestDelete={setDeleteDialogCameraId} />
 
       <div className="flex items-center gap-4 px-3.5 text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">
         <span className="flex-1">Camera</span>
         <span className="w-20 text-right">Tracks</span>
         <span className="w-32 text-right">Latest event</span>
         <span className="w-28 text-right">Stream</span>
-        <span className="w-24" />
+        <span className="w-32" />
       </div>
 
       <div className="rounded-lg border border-border bg-surface divide-y divide-border overflow-hidden">
@@ -199,7 +212,7 @@ export function CamerasView({
                 )}
               </span>
 
-              <span className="w-24 flex justify-end">
+              <span className="w-32 flex justify-end gap-1.5">
                 <Button
                   type="button"
                   variant={isActive ? 'secondary' : 'outline'}
@@ -213,12 +226,23 @@ export function CamerasView({
                   <PlayCircle className="h-3 w-3" />
                   View
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-xs"
+                  aria-label={`Delete camera ${camera.camera_id}`}
+                  className="text-ink-subtle hover:text-danger hover:border-danger/40"
+                  onClick={() => setDeleteDialogCameraId(camera.camera_id)}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
               </span>
             </div>
           )
         })}
       </div>
       {uploadModal}
+      {deleteDialog}
     </div>
   )
 }
