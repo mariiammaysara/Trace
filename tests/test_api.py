@@ -150,6 +150,24 @@ def test_delete_camera_cascades_and_reports_real_counts(client, db_session):
     assert client.get("/cameras/cam_delete_me/deletion-preview").status_code == 404
 
 
+def test_delete_camera_preflight_allows_the_delete_method(client):
+    """A real, separate CORS bug found and fixed alongside the 500 one:
+    allow_methods was ["GET", "POST"] only, so a browser's own preflight
+    OPTIONS request for DELETE /cameras/{camera_id} was rejected client-side
+    before the real DELETE was ever sent (confirmed via a manual OPTIONS
+    request: it came back "Disallowed CORS method")."""
+    response = client.options(
+        "/cameras/cam_preflight_check",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "DELETE",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert "DELETE" in response.headers.get("access-control-allow-methods", "")
+
+
 def test_delete_camera_does_not_touch_other_cameras(client, db_session):
     _seed_full_camera_graph(db_session, "cam_delete_target")
     _seed_full_camera_graph(db_session, "cam_delete_bystander")
@@ -928,3 +946,24 @@ def test_unexpected_error_returns_clean_500_not_a_stack_trace(client, monkeypatc
     assert response.json() == {"detail": "internal server error"}
     assert "RuntimeError" not in response.text
     assert "Traceback" not in response.text
+
+
+def test_unexpected_error_still_carries_real_cors_headers(client, monkeypatch):
+    """The actual bug report: a browser calling this API cross-origin saw
+    `TypeError: Failed to fetch` for a real 500 -- not because the request
+    never reached the server, but because the old `@app.exception_handler
+    (Exception)` response never passed back through CORSMiddleware (Starlette
+    special-cases a bare-`Exception` handler into ServerErrorMiddleware,
+    which sits outside every app.add_middleware(...) layer). Proven here the
+    same way it was diagnosed: a genuinely unhandled exception, through a
+    real endpoint, with a real Origin header -- the response must carry the
+    same Access-Control-Allow-Origin a normal 200/404 already does."""
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("simulated unexpected failure")
+
+    monkeypatch.setattr("database.repository.get_camera", boom)
+
+    response = client.get("/cameras/anything/events", headers={"Origin": "http://localhost:5173"})
+    assert response.status_code == 500
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"

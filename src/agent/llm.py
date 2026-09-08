@@ -42,6 +42,19 @@ DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5"
 DEFAULT_OPENROUTER_MODEL = "openrouter/free"
 
 
+def _env_or_default(name: str, default: str) -> str:
+    """Same intent as os.environ.get(name, default), except a present-but-
+    empty value (docker-compose's `VAR: ${VAR:-}` pattern -- see
+    docker-compose.yml's api/worker services -- sets the env var to "" for
+    every var it lists, even when .env leaves it blank/commented out; that
+    is NOT the same thing as the var being absent) is also treated as "use
+    the default". Without this, TRACE_LLM_MODEL left blank in .env silently
+    sends an empty model string to the provider instead of DEFAULT_*_MODEL
+    -- OpenRouter's real failure mode for that is a 400 "No models
+    provided", not a clean fallback."""
+    return os.environ.get(name) or default
+
+
 @dataclass(frozen=True)
 class ToolCallRequest:
     id: str
@@ -254,7 +267,7 @@ def build_llm_client(provider: Optional[str] = None) -> LLMClient:
                 "ANTHROPIC_API_KEY is not set -- the Vision Agent has no LLM to call. "
                 "Set a real Anthropic API key to use POST /agent/query."
             )
-        model = os.environ.get("TRACE_LLM_MODEL", DEFAULT_ANTHROPIC_MODEL)
+        model = _env_or_default("TRACE_LLM_MODEL", DEFAULT_ANTHROPIC_MODEL)
         return AnthropicLLMClient(api_key=api_key, model=model)
 
     if resolved == "openrouter":
@@ -265,7 +278,7 @@ def build_llm_client(provider: Optional[str] = None) -> LLMClient:
                 "Set a real OpenRouter API key (from openrouter.ai/keys) to use POST /agent/query "
                 "with TRACE_LLM_PROVIDER=openrouter."
             )
-        model = os.environ.get("TRACE_LLM_MODEL", DEFAULT_OPENROUTER_MODEL)
+        model = _env_or_default("TRACE_LLM_MODEL", DEFAULT_OPENROUTER_MODEL)
         return OpenRouterLLMClient(api_key=api_key, model=model)
 
     raise LLMNotConfiguredError(f"Unknown TRACE_LLM_PROVIDER {resolved!r} -- expected 'anthropic' or 'openrouter'.")

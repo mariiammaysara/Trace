@@ -91,6 +91,33 @@ def test_build_llm_client_honors_model_override(monkeypatch):
     assert client._model == "some/other-model:free"
 
 
+def test_build_llm_client_treats_empty_string_model_as_unset(monkeypatch):
+    """The real bug this guards against: docker-compose.yml's
+    `TRACE_LLM_MODEL: ${TRACE_LLM_MODEL:-}` always sets the env var inside
+    the container -- to an empty string when .env leaves it blank/commented
+    out, never to "absent". A plain os.environ.get("TRACE_LLM_MODEL",
+    DEFAULT) doesn't fall back for a present-but-empty value, so an empty
+    model string was sent straight to the provider (OpenRouter's real
+    failure for that: 400 "No models provided", not a clean default)."""
+    monkeypatch.setenv("TRACE_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("TRACE_LLM_MODEL", "")
+
+    client = build_llm_client()
+
+    assert client._model == DEFAULT_OPENROUTER_MODEL
+
+
+def test_build_llm_client_treats_empty_string_model_as_unset_for_anthropic_too(monkeypatch):
+    monkeypatch.setenv("TRACE_LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("TRACE_LLM_MODEL", "")
+
+    client = build_llm_client()
+
+    assert client._model == DEFAULT_ANTHROPIC_MODEL
+
+
 def test_build_llm_client_rejects_unknown_provider(monkeypatch):
     with pytest.raises(LLMNotConfiguredError, match="foo"):
         build_llm_client(provider="foo")
