@@ -9,7 +9,7 @@ import {
   parseInlineBold,
   type AgentEventRef,
 } from '@/lib/agentInsights'
-import { BrainCircuit, Wrench, ChevronDown, CornerDownLeft, CornerDownRight, Loader2 } from 'lucide-react'
+import { SquareTerminal, Wrench, ChevronDown, CornerDownLeft, CornerDownRight, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const EXAMPLE_QUERIES = [
@@ -143,14 +143,14 @@ export function VisionAgentView({ onReplayEvent }: VisionAgentViewProps) {
 
   return (
     <div className="relative overflow-hidden flex flex-col gap-5 max-w-4xl mx-auto w-full rounded-xl border border-border bg-surface p-8 shadow-2xl before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-accent/20 before:to-transparent before:content-['']">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent/30 bg-accent/10 text-accent">
-          <BrainCircuit className="h-5 w-5" />
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-alt text-ink-quiet shadow-sm">
+          <SquareTerminal className="h-4 w-4 text-accent stroke-[1.75]" />
         </div>
         <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <span className="text-lg font-semibold text-ink">Vision Intelligence Copilot</span>
-            <span className="rounded border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent">
+            <span className="rounded border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[10px] tracking-wider text-accent">
               TOOL-GROUNDED REASONING
             </span>
           </div>
