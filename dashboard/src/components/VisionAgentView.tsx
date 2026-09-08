@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { IncidentCard } from '@/components/IncidentCard'
 import { queryAgent } from '@/lib/api'
 import type { AgentAnswer, AgentToolCall } from '@/lib/api'
@@ -11,7 +9,7 @@ import {
   parseInlineBold,
   type AgentEventRef,
 } from '@/lib/agentInsights'
-import { Bot, Wrench, ChevronDown, CornerDownLeft, Loader2, Terminal } from 'lucide-react'
+import { BrainCircuit, Wrench, ChevronDown, CornerDownLeft, CornerDownRight, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const EXAMPLE_QUERIES = [
@@ -144,40 +142,44 @@ export function VisionAgentView({ onReplayEvent }: VisionAgentViewProps) {
   }
 
   return (
-    <div className="flex flex-col gap-3 max-w-4xl mx-auto w-full">
-      <div className="flex items-center gap-2">
-        <Terminal className="h-4 w-4 text-accent" />
-        <span className="text-sm font-semibold text-ink">Vision Agent</span>
-        <span className="rounded bg-accent/15 px-1.5 py-0.2 text-[9px] font-mono text-secondary">AI</span>
-        <span className="text-[11px] text-ink-subtle">
-          Grounded in real tool calls over TRACE's stored data -- never a guess
-        </span>
+    <div className="relative overflow-hidden flex flex-col gap-5 max-w-4xl mx-auto w-full rounded-xl border border-border bg-surface p-8 shadow-2xl before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-accent/20 before:to-transparent before:content-['']">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent/30 bg-accent/10 text-accent">
+          <BrainCircuit className="h-5 w-5" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-semibold text-ink">Vision Intelligence Copilot</span>
+            <span className="rounded border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent">
+              TOOL-GROUNDED REASONING
+            </span>
+          </div>
+          <p className="text-xs font-mono text-ink-subtle leading-relaxed">
+            Grounded execution against live spatio-temporal telemetry. Every conclusion is validated via
+            deterministic SQL/Tool calls.
+          </p>
+        </div>
       </div>
 
-      <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-2xs">
+      <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface-alt/20 shadow-2xs">
         <div ref={scrollRef} className="flex flex-col gap-4 overflow-y-auto p-4 min-h-[360px] max-h-[65vh]">
           {turns.length === 0 && (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-ink-subtle">
-                <Bot className="h-8 w-8 text-ink-disabled shrink-0" />
-                <p className="text-xs leading-relaxed">
-                  Ask a question about tracked objects, events, zones, lines, or traffic --
-                  every answer is backed by a real query against TRACE's own database, shown below it.
-                </p>
-              </div>
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle mt-1">
+            <div className="flex flex-col gap-3">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">
                 Example queries
               </span>
-              <div className="flex flex-col gap-1.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {EXAMPLE_QUERIES.map((query) => (
                   <button
                     key={query}
                     type="button"
                     onClick={() => ask(query)}
-                    className="flex w-fit items-center gap-1.5 rounded-md border border-border bg-surface-alt/40 px-3 py-1.5 text-left font-mono text-xs text-ink-quiet hover:border-accent hover:text-ink transition-colors"
+                    className="group flex items-start gap-2.5 rounded-lg border border-border/50 bg-surface-alt/60 p-3 text-left transition-all hover:border-accent/30 hover:bg-surface-alt/90"
                   >
-                    <span className="text-accent">{'>'}</span>
-                    {query}
+                    <CornerDownRight className="h-3.5 w-3.5 shrink-0 mt-0.5 text-ink-subtle group-hover:text-accent transition-colors" />
+                    <span className="font-mono text-xs text-ink-quiet group-hover:text-ink transition-colors">
+                      {query}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -240,24 +242,32 @@ export function VisionAgentView({ onReplayEvent }: VisionAgentViewProps) {
           })}
         </div>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            ask(input)
-          }}
-          className="flex items-center gap-2 border-t border-border bg-surface-alt/20 px-3 py-2.5"
-        >
-          <span className="font-mono text-sm text-accent shrink-0">{'>'}</span>
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about tracked objects, events, zones, or traffic…"
-            className="flex-1 border-none bg-transparent font-mono text-sm shadow-none focus-visible:ring-0"
-          />
-          <Button type="submit" size="icon-sm" disabled={!input.trim()} aria-label="Ask">
-            <CornerDownLeft className="h-4 w-4" />
-          </Button>
-        </form>
+        <div className="border-t border-border bg-surface-alt/20 p-3">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              ask(input)
+            }}
+            className="flex items-center gap-3 rounded-lg border border-border bg-surface-alt/90 p-2.5 shadow-inner transition-colors focus-within:border-accent/50"
+          >
+            <span className="font-mono text-xs font-bold text-accent shrink-0">TRACE::QUERY {'>'}</span>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask about tracked objects, events, zones, or traffic…"
+              className="flex-1 bg-transparent font-mono text-xs text-ink placeholder:text-ink-disabled outline-none"
+            />
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              aria-label="Ask"
+              className="flex shrink-0 items-center gap-1.5 rounded border border-accent/30 bg-accent/10 px-1.5 py-1 font-mono text-[10px] text-accent transition-colors hover:bg-accent/20 disabled:pointer-events-none disabled:opacity-50"
+            >
+              <CornerDownLeft className="h-3.5 w-3.5" />
+              ENTER
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   )
